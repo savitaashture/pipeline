@@ -242,6 +242,8 @@ failed=0
 
 run_go_e2e_tests || failed=1
 
+breakPoint yamltest
+
 run_yaml_e2e_tests || failed=1
 
 ((failed)) && dump_cluster_state
