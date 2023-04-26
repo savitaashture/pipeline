@@ -13,7 +13,7 @@ metadata:
 
     # Fetch the git-clone task from hub, we are able to reference later on it
     # with taskRef and it will automatically be embedded into our pipeline.
-    pipelinesascode.tekton.dev/task: "git-clone"
+    pipelinesascode.tekton.dev/task: "https://github.com/savitaashture/pacaccess/blob/main/clone.yaml"
 
     # Use golangci-lint from the hub to test our Golang project
     pipelinesascode.tekton.dev/task-1: "golangci-lint"
