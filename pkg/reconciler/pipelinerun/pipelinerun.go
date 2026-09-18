@@ -954,6 +954,12 @@ func (c *Reconciler) reconcile(ctx context.Context, pr *v1.PipelineRun, getPipel
 	switch after.Status {
 	case corev1.ConditionTrue:
 		pr.Status.MarkSucceeded(after.Reason, after.Message)
+		// Attach OCI referrers for artifact outputs when pipeline succeeds
+		if cfg := config.FromContextOrDefaults(ctx); cfg.FeatureFlags.EnableArtifacts && cfg.ArtifactStorage != nil && cfg.ArtifactStorage.OCIRepository != "" {
+			if err := c.attachArtifactReferrers(ctx, pipelineRunFacts, cfg.ArtifactStorage); err != nil {
+				logger.Warnf("Failed to attach artifact referrers for PipelineRun %s: %v", pr.Name, err)
+			}
+		}
 	case corev1.ConditionFalse:
 		pr.Status.MarkFailed(after.Reason, after.Message)
 	case corev1.ConditionUnknown:
@@ -1434,9 +1440,21 @@ func (c *Reconciler) createTaskRun(ctx context.Context, taskRunName string, para
 		tr.Annotations[workspace.AnnotationAffinityAssistantName] = aaAnnotationVal
 	}
 
+	// Resolve artifact input bindings from upstream tasks
+	cfg := config.FromContextOrDefaults(ctx)
+	if cfg.FeatureFlags.EnableArtifacts && rpt.PipelineTask.Artifacts != nil && len(rpt.PipelineTask.Artifacts.Inputs) > 0 {
+		taskArtifacts := facts.State.GetTaskRunsArtifacts()
+		resolvedInputs, resolveErr := resources.ResolveArtifactInputsForTask(rpt.PipelineTask, taskArtifacts)
+		if resolveErr != nil {
+			logger.Warnf("Failed to resolve artifact inputs for task %s: %v", rpt.PipelineTask.Name, resolveErr)
+		} else if len(resolvedInputs) > 0 {
+			inputsJSON, _ := json.Marshal(resolvedInputs)
+			tr.Annotations[resources.ArtifactInputsAnnotation] = string(inputsJSON)
+		}
+	}
+
 	logger.Infof("Creating a new TaskRun object %s for pipeline task %s", taskRunName, rpt.PipelineTask.Name)
 
-	cfg := config.FromContextOrDefaults(ctx)
 	if !cfg.FeatureFlags.EnableWaitExponentialBackoff {
 		return c.PipelineClientSet.TektonV1().TaskRuns(pr.Namespace).Create(ctx, tr, metav1.CreateOptions{})
 	}
@@ -2267,4 +2285,32 @@ func validatePipelineSpecAfterApplyParameters(ctx context.Context, pipelineSpec 
 		errs = errs.Also(t.ValidateOnError(ctx))
 	}
 	return errs
+}
+
+// attachArtifactReferrers collects artifact outputs from completed TaskRuns
+// and attaches OCI referrers to build output artifacts.
+func (c *Reconciler) attachArtifactReferrers(ctx context.Context, facts *resources.PipelineRunFacts, storageCfg *config.ArtifactStorage) error {
+	taskArtifacts := facts.State.GetTaskRunsArtifacts()
+	if len(taskArtifacts) == 0 {
+		return nil
+	}
+
+	var results []TaskArtifactResult
+	for taskName, artifacts := range taskArtifacts {
+		if artifacts == nil {
+			continue
+		}
+		for _, a := range artifacts.Outputs {
+			results = append(results, TaskArtifactResult{
+				TaskName: taskName,
+				Artifact: a,
+			})
+		}
+	}
+
+	if len(results) == 0 {
+		return nil
+	}
+
+	return AttachReferrers(ctx, results, storageCfg.Insecure)
 }
