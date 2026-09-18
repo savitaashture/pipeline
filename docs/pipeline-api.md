@@ -308,6 +308,64 @@ _Appears in:_
 | `buildOutput` _boolean_ | Indicate if the artifact is a build output or a by-product |  |  |
 
 
+#### ArtifactDeclaration
+
+
+
+ArtifactDeclaration describes a single artifact input or output.
+
+
+
+_Appears in:_
+- [ArtifactDeclarations](#artifactdeclarations)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name of the artifact (used in path substitution and pipeline bindings) |  |  |
+| `type` _[ArtifactType](#artifacttype)_ | Type of the artifact: "reference" or "content". Defaults to "content". |  | Optional: \{\} <br /> |
+| `mediaType` _string_ | MediaType hint for the artifact (e.g., application/vnd.tekton.artifact.junit.v1+xml) |  | Optional: \{\} <br /> |
+| `subject` _boolean_ | Subject marks this artifact as the primary build output — the SLSA<br />attestation subject. Multiple artifacts can be subjects. |  | Optional: \{\} <br /> |
+
+
+#### ArtifactDeclarations
+
+
+
+ArtifactDeclarations declares what artifacts a task consumes and produces.
+
+
+
+_Appears in:_
+- [EmbeddedTask](#embeddedtask)
+- [TaskSpec](#taskspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `inputs` _[ArtifactDeclaration](#artifactdeclaration) array_ | Inputs declares artifacts that the task expects to consume. |  |  |
+| `outputs` _[ArtifactDeclaration](#artifactdeclaration) array_ | Outputs declares artifacts that the task produces. |  |  |
+
+
+#### ArtifactType
+
+_Underlying type:_ _string_
+
+ArtifactType distinguishes how Tekton handles the artifact.
+  - "reference": the step already stored the content elsewhere (e.g. pushed
+    an image); Tekton only records the URI and digest.
+  - "content": the step writes data to a path; Tekton uploads, downloads and
+    verifies it transparently across Tasks.
+
+
+
+_Appears in:_
+- [ArtifactDeclaration](#artifactdeclaration)
+
+| Field | Description |
+| --- | --- |
+| `content` | ArtifactTypeContent means Tekton manages storage and transport of the artifact.<br /> |
+| `reference` | ArtifactTypeReference means the step handles storage; Tekton only records metadata.<br /> |
+
+
 #### ArtifactValue
 
 
@@ -404,6 +462,7 @@ _Appears in:_
 | `sidecars` _[Sidecar](#sidecar) array_ | Sidecars are run alongside the Task's step containers. They begin before<br />the steps start and end after the steps complete. |  |  |
 | `workspaces` _[WorkspaceDeclaration](#workspacedeclaration) array_ | Workspaces are the volumes that this Task requires. |  |  |
 | `results` _[TaskResult](#taskresult) array_ | Results are values that this Task can output |  |  |
+| `artifacts` _[ArtifactDeclarations](#artifactdeclarations)_ | Artifacts declares the inputs and outputs of the task for OCI-based transport.<br />Requires enable-artifacts feature flag. |  | Optional: \{\} <br /> |
 
 
 
@@ -812,11 +871,45 @@ _Appears in:_
 | `runAfter` _string array_ | RunAfter is the list of PipelineTask names that should be executed before<br />this Task executes. (Used to force a specific ordering in graph execution.) |  | Optional: \{\} <br /> |
 | `params` _[Params](#params)_ | Parameters declares parameters passed to this task. |  | Optional: \{\} <br /> |
 | `matrix` _[Matrix](#matrix)_ | Matrix declares parameters used to fan out this task. |  | Optional: \{\} <br /> |
+| `artifacts` _[PipelineTaskArtifacts](#pipelinetaskartifacts)_ | Artifacts configures artifact bindings for this task. |  | Optional: \{\} <br /> |
 | `workspaces` _[WorkspacePipelineTaskBinding](#workspacepipelinetaskbinding) array_ | Workspaces maps workspaces from the pipeline spec to the workspaces<br />declared in the Task. |  | Optional: \{\} <br /> |
 | `timeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#duration-v1-meta)_ | Duration after which the TaskRun times out. Defaults to 1 hour.<br />Refer Go's ParseDuration documentation for expected format: https://golang.org/pkg/time/#ParseDuration |  | Optional: \{\} <br /> |
 | `pipelineRef` _[PipelineRef](#pipelineref)_ | PipelineRef is a reference to a pipeline definition.<br />This is an alpha field. You must set the "enable-api-fields" feature flag<br />to "alpha" for this field to be supported. When enabled, the referenced<br />Pipeline is executed as a child PipelineRun owned by the parent PipelineRun. |  | Optional: \{\} <br /> |
 | `pipelineSpec` _[PipelineSpec](#pipelinespec)_ | PipelineSpec is a specification of a pipeline.<br />This is an alpha field. You must set the "enable-api-fields" feature flag<br />to "alpha" for this field to be supported. When enabled, the embedded<br />Pipeline is executed as a child PipelineRun owned by the parent PipelineRun.<br />Specifying PipelineSpec can be disabled by setting<br />`disable-inline-spec` feature flag.<br />See Pipeline.spec (API version: tekton.dev/v1) |  | Schemaless: \{\} <br />Optional: \{\} <br /> |
 | `onError` _[PipelineTaskOnErrorType](#pipelinetaskonerrortype)_ | OnError defines the exiting behavior of a PipelineRun on error<br />can be set to [ continue \| stopAndFail ] |  | Optional: \{\} <br /> |
+
+
+#### PipelineTaskArtifactBinding
+
+
+
+PipelineTaskArtifactBinding binds an artifact input to an output from another task.
+
+
+
+_Appears in:_
+- [PipelineTaskArtifacts](#pipelinetaskartifacts)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name matches the artifact input name in the referenced Task. |  |  |
+| `from` _string_ | From references an output from another task: "tasks.<taskName>.outputs.<artifactName>" |  |  |
+
+
+#### PipelineTaskArtifacts
+
+
+
+PipelineTaskArtifacts configures artifact bindings for a PipelineTask.
+
+
+
+_Appears in:_
+- [PipelineTask](#pipelinetask)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `inputs` _[PipelineTaskArtifactBinding](#pipelinetaskartifactbinding) array_ | Inputs binds artifact inputs from other tasks' outputs. |  |  |
 
 
 #### PipelineTaskMetadata
@@ -1660,6 +1753,7 @@ _Appears in:_
 | `sidecars` _[Sidecar](#sidecar) array_ | Sidecars are run alongside the Task's step containers. They begin before<br />the steps start and end after the steps complete. |  |  |
 | `workspaces` _[WorkspaceDeclaration](#workspacedeclaration) array_ | Workspaces are the volumes that this Task requires. |  |  |
 | `results` _[TaskResult](#taskresult) array_ | Results are values that this Task can output |  |  |
+| `artifacts` _[ArtifactDeclarations](#artifactdeclarations)_ | Artifacts declares the inputs and outputs of the task for OCI-based transport.<br />Requires enable-artifacts feature flag. |  | Optional: \{\} <br /> |
 
 
 #### TimeoutFields

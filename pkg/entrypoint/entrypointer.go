@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/google/cel-go/cel"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/tektoncd/pipeline/internal/artifactref"
 	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1/types"
 	"github.com/tektoncd/pipeline/pkg/entrypoint/pipeline"
@@ -177,6 +178,15 @@ type Entrypointer struct {
 	// CompressTerminationMessage enables flate compression of termination messages
 	// to fit more results in the 4KB Kubernetes limit.
 	CompressTerminationMessage bool
+
+	// ArtifactInputs are artifacts to download before step execution.
+	ArtifactInputs []ArtifactInput
+	// ArtifactOutputs are artifacts to upload after step execution.
+	ArtifactOutputs []ArtifactOutput
+	// ArtifactInsecure allows plain HTTP for artifact registry.
+	ArtifactInsecure bool
+	// ArtifactRemoteOpts are additional options for OCI remote operations (used in testing).
+	ArtifactRemoteOpts []remote.Option
 }
 
 // Waiter encapsulates waiting for files to exist.
@@ -258,6 +268,21 @@ func (e Entrypointer) Go() error {
 			slog.Error("Error while substituting step artifacts:", slog.Any("error", err))
 		}
 
+		// Download input artifacts before step execution
+		for _, input := range e.ArtifactInputs {
+			if dlErr := DownloadArtifact(ctx, input, e.ArtifactInsecure, e.ArtifactRemoteOpts...); dlErr != nil {
+				err = fmt.Errorf("downloading artifact %s: %w", input.Name, dlErr)
+				break
+			}
+		}
+
+		// Create output artifact directories so steps can write to them
+		for _, ao := range e.ArtifactOutputs {
+			if mkErr := os.MkdirAll(filepath.Dir(ao.Path), 0o755); mkErr != nil {
+				slog.Error("Error creating artifact output directory", slog.String("name", ao.Name), slog.Any("error", mkErr))
+			}
+		}
+
 		ctx, cancel = context.WithCancel(ctx)
 		if e.Timeout != nil && *e.Timeout > time.Duration(0) {
 			ctx, cancel = context.WithTimeout(ctx, *e.Timeout)
@@ -276,6 +301,23 @@ func (e Entrypointer) Go() error {
 			err = err1
 		case allowExec:
 			err = e.Runner.Run(ctx, e.Command...)
+			// Upload output artifacts after successful step execution
+			if err == nil {
+				// Use a fresh context for uploads — the step context may be cancelled by the cancellation watcher
+				uploadCtx := context.Background()
+				for _, ao := range e.ArtifactOutputs {
+					av, uploadErr := UploadArtifact(uploadCtx, ao, e.ArtifactInsecure, e.ArtifactRemoteOpts...)
+					if uploadErr != nil {
+						slog.Error("Error uploading artifact", slog.String("name", ao.Name), slog.Any("error", uploadErr))
+					} else {
+						output = append(output, result.RunResult{
+							Key:        fmt.Sprintf("artifact-%s", ao.Name),
+							Value:      av.Uri,
+							ResultType: result.StepArtifactsResultType,
+						})
+					}
+				}
+			}
 		default:
 			slog.Info("Step was skipped due to when expressions were evaluated to false.")
 			output = append(output, e.outputRunResult(TerminationReasonSkipped))
