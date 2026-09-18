@@ -57,6 +57,9 @@ var (
 	stepMetadataDir            = flag.String("step_metadata_dir", "", "If specified, create directory to store the step metadata e.g. /tekton/steps/<step-name>/")
 	resultExtractionMethod     = flag.String("result_from", entrypoint.ResultExtractionMethodTerminationMessage, "The method using which to extract results from tasks. Default is using the termination message.")
 	compressTerminationMessage = flag.Bool("compress_termination_message", false, "If true, compress termination messages with flate to fit more results in the 4KB Kubernetes limit.")
+	artifactInputs             = flag.String("artifact_inputs", "", "JSON-encoded artifact inputs to download before step execution")
+	artifactOutputs            = flag.String("artifact_outputs", "", "JSON-encoded artifact outputs to upload after step execution")
+	artifactInsecure           = flag.Bool("artifact_insecure", false, "Use plain HTTP for artifact registry")
 )
 
 const (
@@ -151,6 +154,22 @@ func main() {
 		SpireWorkloadAPI:           spireWorkloadAPI,
 		ResultExtractionMethod:     *resultExtractionMethod,
 		CompressTerminationMessage: *compressTerminationMessage,
+		ArtifactInsecure:           *artifactInsecure,
+	}
+
+	if *artifactInputs != "" {
+		ai, err := entrypoint.ParseArtifactInputs(*artifactInputs)
+		if err != nil {
+			log.Fatalf("Error parsing artifact inputs: %v", err)
+		}
+		e.ArtifactInputs = ai
+	}
+	if *artifactOutputs != "" {
+		ao, err := entrypoint.ParseArtifactOutputs(*artifactOutputs)
+		if err != nil {
+			log.Fatalf("Error parsing artifact outputs: %v", err)
+		}
+		e.ArtifactOutputs = ao
 	}
 
 	// Copy any creds injected by the controller into the $HOME directory of the current
