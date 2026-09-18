@@ -233,6 +233,40 @@ func (b *Builder) Build(ctx context.Context, taskRun *v1.TaskRun, taskSpec v1.Ta
 		}
 	}
 
+	// Inject artifact transport args when artifacts are enabled and the Task
+	// declares any. Reference-type outputs need no storage backend at all
+	// (TEP-0192: "a Task is therefore always valid on its own"), so this must
+	// not be gated on OCIRepository being configured -- only content-type
+	// uploads actually need a repository, and that's handled per-artifact in
+	// artifactEntrypointArgs.
+	if featureFlags.EnableArtifacts && taskSpec.Artifacts != nil {
+		artifactStorageCfg := config.FromContextOrDefaults(ctx).ArtifactStorage
+		ociRepository, insecure := "", false
+		if artifactStorageCfg != nil {
+			ociRepository = artifactStorageCfg.OCIRepository
+			insecure = artifactStorageCfg.Insecure
+		}
+		artifactArgs := artifactEntrypointArgs(&taskSpec, ociRepository, insecure)
+		commonExtraEntrypointArgs = append(commonExtraEntrypointArgs, artifactArgs...)
+		// If the pipeline reconciler resolved artifact input URIs, inject them
+		if inputsJSON, ok := taskRun.Annotations["tekton.dev/artifact-inputs"]; ok && inputsJSON != "" {
+			commonExtraEntrypointArgs = append(commonExtraEntrypointArgs, "-artifact_inputs", inputsJSON)
+			if insecure {
+				// Ensure insecure flag is set (may already be set by artifactEntrypointArgs)
+				hasInsecure := false
+				for _, a := range commonExtraEntrypointArgs {
+					if a == "-artifact_insecure" {
+						hasInsecure = true
+						break
+					}
+				}
+				if !hasInsecure {
+					commonExtraEntrypointArgs = append(commonExtraEntrypointArgs, "-artifact_insecure")
+				}
+			}
+		}
+	}
+
 	if featureFlags.EnableTerminationMessageCompression && !sidecarLogsResultsEnabled {
 		commonExtraEntrypointArgs = append(commonExtraEntrypointArgs, "-compress_termination_message=true")
 	}

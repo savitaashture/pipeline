@@ -642,6 +642,28 @@ func getTaskResultReplacements(spec *v1.TaskSpec) map[string]string {
 }
 
 // ApplyArtifacts replaces the occurrences of artifacts.path and step.artifacts.path with the absolute tekton internal path
+// ApplyArtifactDeclarationPaths replaces $(inputs.<name>.path) and $(outputs.<name>.path)
+// with the actual artifact paths based on TaskSpec.Artifacts declarations.
+func ApplyArtifactDeclarationPaths(spec *v1.TaskSpec) *v1.TaskSpec {
+	if spec.Artifacts == nil {
+		return spec
+	}
+
+	stringReplacements := map[string]string{}
+	for _, input := range spec.Artifacts.Inputs {
+		stringReplacements[fmt.Sprintf("inputs.%s.path", input.Name)] = filepath.Join("/workspace/artifacts/inputs", input.Name)
+	}
+	for _, output := range spec.Artifacts.Outputs {
+		if output.Type == v1.ArtifactTypeReference {
+			stringReplacements[fmt.Sprintf("outputs.%s.uri", output.Name)] = filepath.Join("/workspace/artifacts/outputs", output.Name+".uri")
+		} else {
+			stringReplacements[fmt.Sprintf("outputs.%s.path", output.Name)] = filepath.Join("/workspace/artifacts/outputs", output.Name)
+		}
+	}
+
+	return ApplyReplacements(spec, stringReplacements, map[string][]string{}, map[string]map[string]string{})
+}
+
 func ApplyArtifacts(spec *v1.TaskSpec) *v1.TaskSpec {
 	for i := range spec.Steps {
 		stringReplacements := getArtifactReplacements(spec.Steps[i], i)

@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-artifact-storage
+  namespace: tekton-pipelines
+data:
+  oci-repository: "registry:5000/artifacts"
+  insecure: "true"

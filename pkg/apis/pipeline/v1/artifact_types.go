@@ -23,6 +23,61 @@ import (
 // Algorithm Standard cryptographic hash algorithm
 type Algorithm string
 
+// ArtifactDeclarations declares what artifacts a task consumes and produces.
+type ArtifactDeclarations struct {
+	// Inputs declares artifacts that the task expects to consume.
+	// +listType=atomic
+	Inputs []ArtifactDeclaration `json:"inputs,omitempty"`
+	// Outputs declares artifacts that the task produces.
+	// +listType=atomic
+	Outputs []ArtifactDeclaration `json:"outputs,omitempty"`
+}
+
+// ArtifactType distinguishes how Tekton handles the artifact.
+//   - "reference": the step already stored the content elsewhere (e.g. pushed
+//     an image); Tekton only records the URI and digest.
+//   - "content": the step writes data to a path; Tekton uploads, downloads and
+//     verifies it transparently across Tasks.
+type ArtifactType string
+
+const (
+	// ArtifactTypeContent means Tekton manages storage and transport of the artifact.
+	ArtifactTypeContent ArtifactType = "content"
+	// ArtifactTypeReference means the step handles storage; Tekton only records metadata.
+	ArtifactTypeReference ArtifactType = "reference"
+)
+
+// ArtifactDeclaration describes a single artifact input or output.
+type ArtifactDeclaration struct {
+	// Name of the artifact (used in path substitution and pipeline bindings)
+	Name string `json:"name"`
+	// Type of the artifact: "reference" or "content". Defaults to "content".
+	// +optional
+	Type ArtifactType `json:"type,omitempty"`
+	// MediaType hint for the artifact (e.g., application/vnd.tekton.artifact.junit.v1+xml)
+	// +optional
+	MediaType string `json:"mediaType,omitempty"`
+	// Subject marks this artifact as the primary build output — the SLSA
+	// attestation subject. Multiple artifacts can be subjects.
+	// +optional
+	Subject bool `json:"subject,omitempty"`
+}
+
+// PipelineTaskArtifacts configures artifact bindings for a PipelineTask.
+type PipelineTaskArtifacts struct {
+	// Inputs binds artifact inputs from other tasks' outputs.
+	// +listType=atomic
+	Inputs []PipelineTaskArtifactBinding `json:"inputs,omitempty"`
+}
+
+// PipelineTaskArtifactBinding binds an artifact input to an output from another task.
+type PipelineTaskArtifactBinding struct {
+	// Name matches the artifact input name in the referenced Task.
+	Name string `json:"name"`
+	// From references an output from another task: "tasks.<taskName>.outputs.<artifactName>"
+	From string `json:"from"`
+}
+
 // Artifact represents an artifact within a system, potentially containing multiple values
 // associated with it.
 type Artifact struct {

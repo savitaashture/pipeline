@@ -409,6 +409,16 @@ func setStepArtifactsValueFromSidecarLogResult(results []result.RunResult, name 
 func setStepArtifactsValueFromTerminationMessageRunResult(results []result.RunResult, artifacts *v1.Artifacts) error {
 	for _, r := range results {
 		if r.ResultType == result.StepArtifactsResultType {
+			// Handle TEP-0164 uploaded artifacts: key is "artifact-<name>", value is a URI
+			if strings.HasPrefix(r.Key, "artifact-") {
+				name := strings.TrimPrefix(r.Key, "artifact-")
+				artifacts.Outputs = append(artifacts.Outputs, v1.Artifact{
+					Name:   name,
+					Values: []v1.ArtifactValue{{Uri: r.Value}},
+				})
+				continue
+			}
+			// Legacy provenance.json format
 			return json.Unmarshal([]byte(r.Value), artifacts)
 		}
 	}
