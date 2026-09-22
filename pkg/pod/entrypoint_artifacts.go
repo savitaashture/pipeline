@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/tektoncd/pipeline/pkg/apis/pipeline"
 	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
@@ -44,7 +45,7 @@ func artifactEntrypointArgs(taskSpec *v1.TaskSpec, ociRepository string, insecur
 			inputs = append(inputs, artifactInput{
 				Name: decl.Name,
 				// URI will be resolved at runtime from pipeline bindings or params
-				Path: filepath.Join("/workspace/artifacts/inputs", decl.Name),
+				Path: filepath.Join(pipeline.ArtifactsDir, "inputs", decl.Name),
 			})
 		}
 		data, _ := json.Marshal(inputs)
@@ -74,14 +75,14 @@ func artifactEntrypointArgs(taskSpec *v1.TaskSpec, ociRepository string, insecur
 			if artifactType == v1.ArtifactTypeReference {
 				// Reference artifacts: the step writes the URI+digest to a file;
 				// Tekton does not transport or store any content.
-				out.Path = filepath.Join("/workspace/artifacts/outputs", decl.Name+".uri")
+				out.Path = filepath.Join(pipeline.ArtifactsDir, "outputs", decl.Name+".uri")
 			} else {
 				// Content artifacts: the step writes data under this directory.
 				// When content storage is configured, the entrypoint uploads it;
 				// otherwise (TEP-0192 "disabled storage" default) it is still
 				// digested and recorded, just not uploaded -- leave Repository
 				// unset rather than building a broken "/<name>" path.
-				out.Path = filepath.Join("/workspace/artifacts/outputs", decl.Name)
+				out.Path = filepath.Join(pipeline.ArtifactsDir, "outputs", decl.Name)
 				if ociRepository != "" {
 					out.Repository = fmt.Sprintf("%s/%s", ociRepository, decl.Name)
 				}

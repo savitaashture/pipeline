@@ -47,9 +47,9 @@ echo done > $(outputs.results.path)/data.json
 	got := resources.ApplyArtifactDeclarationPaths(spec)
 
 	expectedScript := `
-cd /workspace/artifacts/inputs/source
-mkdir -p /workspace/artifacts/outputs/results
-echo done > /workspace/artifacts/outputs/results/data.json
+cd /tekton/artifacts/inputs/source
+mkdir -p /tekton/artifacts/outputs/results
+echo done > /tekton/artifacts/outputs/results/data.json
 `
 	if got.Steps[0].Script != expectedScript {
 		t.Errorf("script mismatch:\ngot:  %q\nwant: %q", got.Steps[0].Script, expectedScript)
