@@ -62,8 +62,8 @@ func TestAttachReferrers(t *testing.T) {
 		{
 			TaskName: "build",
 			Artifact: v1.Artifact{
-				Name:        "image",
-				BuildOutput: true,
+				Name:    "image",
+				Subject: true,
 				Values: []v1.ArtifactValue{
 					{Uri: subjectDigestRef, Digest: map[v1.Algorithm]string{"sha256": strings.TrimPrefix(subjectDigest.String(), "sha256:")}},
 				},

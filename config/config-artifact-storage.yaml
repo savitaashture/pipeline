@@ -1,4 +1,4 @@
-# Copyright 2024 The Tekton Authors
+# Copyright 2026 The Tekton Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,11 +28,40 @@ data:
     #                              #
     ################################
 
-    # oci-repository is the base OCI repository for artifact storage.
-    # Artifacts are pushed as OCI images to <oci-repository>/<artifact-name>.
-    # Example: "ghcr.io/org/project/artifacts" or "registry:5000/artifacts"
-    # oci-repository: ""
+    # Enable content artifact storage (default: "false").
+    # When disabled, content artifacts are digested and recorded in TaskRun
+    # status but not uploaded to a backend.
+    # enabled: "true"
 
-    # insecure allows plain HTTP for the OCI registry (for local/dev registries).
-    # Default: "false"
+    # Backend type (default: "oci").
+    # backend: "oci"
+
+    # Artifacts smaller than this (in bytes) are stored inline in TaskRun
+    # status regardless of backend (default: "1024", ceiling: "2048").
+    # inline-threshold: "1024"
+
+    # --- OCI-specific configuration ---
+
+    # Default OCI repository for artifact staging (task-to-task passing).
+    # Required when backend is "oci"
+    # oci-repository: "registry.example.com/tekton/artifacts"
+
+    # Allow plain HTTP for the OCI registry (for local/dev registries) (default: "false").
     # insecure: "false"
+
+    # Secret containing OCI registry credentials (kubernetes.io/dockerconfigjson).
+    # If not set, ServiceAccount imagePullSecrets are used.
+    # oci.credentialsSecret: "tekton-artifact-oci-creds"
+
+    # Attach output artifacts as OCI referrers to subject artifacts.
+    # Referrers are pushed to the subject's repository (same-repo constraint) (default: "true").
+    # oci.attachReferrers: "true"
+
+    # Tag pattern for artifact manifests in oci-repository.
+    # Variables: {{namespace}}, {{pipelinerun}}, {{taskrun}}, {{artifact}}
+    # Default: "{{namespace}}.{{taskrun}}.{{artifact}}"
+    # oci.tagPattern: "{{namespace}}.{{taskrun}}.{{artifact}}"
+
+    # Create a root OCI Index per PipelineRun and attach all artifacts
+    # as referrers to it. Useful when there is no subject artifact (default: "false").
+    # oci.groupByPipelineRun: "false"

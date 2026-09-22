@@ -94,7 +94,7 @@ func NewStore(logger configmap.Logger, onAfterStore ...func(name string, value i
 				GetEventsConfigName():                 NewEventsFromConfigMap,
 				GetTracingConfigName():                NewTracingFromConfigMap,
 				GetWaitExponentialBackoffConfigName(): NewWaitExponentialBackoffFromConfigMap,
-			GetArtifactStorageConfigName():        NewArtifactStorageFromConfigMap,
+				GetArtifactStorageConfigName():        NewArtifactStorageFromConfigMap,
 			},
 			onAfterStore...,
 		),
