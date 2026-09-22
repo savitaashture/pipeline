@@ -64,7 +64,12 @@ func FromContextOrDefaults(ctx context.Context) *Config {
 		Events:                 DefaultEvents.DeepCopy(),
 		Tracing:                DefaultTracing.DeepCopy(),
 		WaitExponentialBackoff: DefaultWaitExponentialBackoff.DeepCopy(),
-		ArtifactStorage:        &ArtifactStorage{},
+		ArtifactStorage: &ArtifactStorage{
+			Backend:            DefaultBackend,
+			InlineThreshold:    DefaultInlineThreshold,
+			OCIAttachReferrers: true,
+			OCITagPattern:      DefaultTagPattern,
+		},
 	}
 }
 
@@ -141,7 +146,12 @@ func (s *Store) Load() *Config {
 	}
 	artifactStorage := s.UntypedLoad(GetArtifactStorageConfigName())
 	if artifactStorage == nil {
-		artifactStorage = &ArtifactStorage{}
+		artifactStorage = &ArtifactStorage{
+			Backend:            DefaultBackend,
+			InlineThreshold:    DefaultInlineThreshold,
+			OCIAttachReferrers: true,
+			OCITagPattern:      DefaultTagPattern,
+		}
 	}
 
 	return &Config{

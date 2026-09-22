@@ -34,30 +34,55 @@ func TestNewArtifactStorageFromMap(t *testing.T) {
 		{
 			name: "all fields set",
 			data: map[string]string{
-				"oci-repository": "ghcr.io/org/project/artifacts",
-				"insecure":       "true",
+				"enabled":                "true",
+				"backend":                "oci",
+				"inline-threshold":       "512",
+				"oci-repository":         "ghcr.io/org/project/artifacts",
+				"insecure":               "true",
+				"oci.credentialsSecret":  "my-secret",
+				"oci.attachReferrers":    "false",
+				"oci.tagPattern":         "{{namespace}}-{{taskrun}}",
+				"oci.groupByPipelineRun": "true",
 			},
 			want: &ArtifactStorage{
-				OCIRepository: "ghcr.io/org/project/artifacts",
-				Insecure:      true,
+				Enabled:               true,
+				Backend:               "oci",
+				InlineThreshold:       512,
+				OCIRepository:         "ghcr.io/org/project/artifacts",
+				Insecure:              true,
+				OCICredentialsSecret:  "my-secret",
+				OCIAttachReferrers:    false,
+				OCITagPattern:         "{{namespace}}-{{taskrun}}",
+				OCIGroupByPipelineRun: true,
 			},
 		},
 		{
 			name: "defaults when empty",
 			data: map[string]string{},
 			want: &ArtifactStorage{
-				OCIRepository: "",
-				Insecure:      false,
+				Enabled:            false,
+				Backend:            DefaultBackend,
+				InlineThreshold:    DefaultInlineThreshold,
+				OCIRepository:      "",
+				Insecure:           false,
+				OCIAttachReferrers: true,
+				OCITagPattern:      DefaultTagPattern,
 			},
 		},
 		{
-			name: "only repository",
+			name: "only repository and enabled",
 			data: map[string]string{
+				"enabled":        "true",
 				"oci-repository": "registry:5000/artifacts",
 			},
 			want: &ArtifactStorage{
-				OCIRepository: "registry:5000/artifacts",
-				Insecure:      false,
+				Enabled:            true,
+				Backend:            DefaultBackend,
+				InlineThreshold:    DefaultInlineThreshold,
+				OCIRepository:      "registry:5000/artifacts",
+				Insecure:           false,
+				OCIAttachReferrers: true,
+				OCITagPattern:      DefaultTagPattern,
 			},
 		},
 		{
@@ -68,19 +93,70 @@ func TestNewArtifactStorageFromMap(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			// Regression test: an ConfigMap update that leaves a key present but
-			// empty (e.g. a naive restore that writes "" instead of deleting the
-			// key) must not fail config parsing -- a parse error here is fatal
-			// and crashes the whole controller on config reload.
-			name: "empty insecure value is treated as unset",
+			name: "invalid enabled value",
 			data: map[string]string{
-				"oci-repository": "registry:5000/artifacts",
-				"insecure":       "",
+				"enabled": "not-a-bool",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid inline-threshold not a number",
+			data: map[string]string{
+				"inline-threshold": "abc",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid inline-threshold negative",
+			data: map[string]string{
+				"inline-threshold": "-1",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid inline-threshold exceeds ceiling",
+			data: map[string]string{
+				"inline-threshold": "4096",
+			},
+			wantErr: true,
+		},
+		{
+			name: "inline-threshold at ceiling is valid",
+			data: map[string]string{
+				"inline-threshold": "2048",
 			},
 			want: &ArtifactStorage{
-				OCIRepository: "registry:5000/artifacts",
-				Insecure:      false,
+				Backend:            DefaultBackend,
+				InlineThreshold:    2048,
+				OCIAttachReferrers: true,
+				OCITagPattern:      DefaultTagPattern,
 			},
+		},
+		{
+			name: "inline-threshold zero is valid",
+			data: map[string]string{
+				"inline-threshold": "0",
+			},
+			want: &ArtifactStorage{
+				Backend:            DefaultBackend,
+				InlineThreshold:    0,
+				OCIAttachReferrers: true,
+				OCITagPattern:      DefaultTagPattern,
+			},
+		},
+		{
+			name: "invalid oci.attachReferrers",
+			data: map[string]string{
+				"oci.attachReferrers": "not-a-bool",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid oci.groupByPipelineRun",
+			data: map[string]string{
+				"oci.groupByPipelineRun": "not-a-bool",
+			},
+			wantErr: true,
 		},
 	}
 
@@ -107,8 +183,15 @@ func TestNewArtifactStorageFromConfigMap(t *testing.T) {
 			Namespace: "tekton-pipelines",
 		},
 		Data: map[string]string{
-			"oci-repository": "registry:5000/tekton-artifacts",
-			"insecure":       "true",
+			"enabled":                "true",
+			"backend":                "oci",
+			"inline-threshold":       "1024",
+			"oci-repository":         "registry:5000/tekton-artifacts",
+			"insecure":               "true",
+			"oci.credentialsSecret":  "my-registry-creds",
+			"oci.attachReferrers":    "true",
+			"oci.tagPattern":         "{{namespace}}.{{taskrun}}.{{artifact}}",
+			"oci.groupByPipelineRun": "false",
 		},
 	}
 
@@ -117,8 +200,14 @@ func TestNewArtifactStorageFromConfigMap(t *testing.T) {
 		t.Fatalf("NewArtifactStorageFromConfigMap() error = %v", err)
 	}
 	want := &ArtifactStorage{
-		OCIRepository: "registry:5000/tekton-artifacts",
-		Insecure:      true,
+		Enabled:              true,
+		Backend:              "oci",
+		InlineThreshold:      1024,
+		OCIRepository:        "registry:5000/tekton-artifacts",
+		Insecure:             true,
+		OCICredentialsSecret: "my-registry-creds",
+		OCIAttachReferrers:   true,
+		OCITagPattern:        "{{namespace}}.{{taskrun}}.{{artifact}}",
 	}
 	if d := cmp.Diff(want, got); d != "" {
 		t.Errorf("mismatch (-want +got):\n%s", d)
