@@ -82,7 +82,12 @@ func TestStoreLoadWithContext_Empty(t *testing.T) {
 		Events:                 config.DefaultEvents.DeepCopy(),
 		Tracing:                config.DefaultTracing.DeepCopy(),
 		WaitExponentialBackoff: config.DefaultWaitExponentialBackoff.DeepCopy(),
-		ArtifactStorage:        &config.ArtifactStorage{},
+		ArtifactStorage: &config.ArtifactStorage{
+			Backend:            config.DefaultBackend,
+			InlineThreshold:    config.DefaultInlineThreshold,
+			OCIAttachReferrers: true,
+			OCITagPattern:      config.DefaultTagPattern,
+		},
 	}
 
 	store := config.NewStore(logtesting.TestLogger(t))
