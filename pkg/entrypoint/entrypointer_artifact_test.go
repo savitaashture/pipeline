@@ -70,8 +70,8 @@ func TestEntrypointer_ArtifactOutputUpload(t *testing.T) {
 				MediaType:  "application/vnd.cyclonedx+json",
 			},
 		},
-		ArtifactInsecure:     true,
-		ArtifactRemoteOpts:   transportOpts(srv),
+		ArtifactInsecure:   true,
+		ArtifactRemoteOpts: transportOpts(srv),
 	}
 
 	if err := e.Go(); err != nil {

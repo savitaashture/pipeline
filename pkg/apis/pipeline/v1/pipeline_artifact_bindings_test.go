@@ -46,7 +46,7 @@ func TestPipelineTaskArtifactBinding_JSONRoundTrip(t *testing.T) {
 
 func TestPipelineTask_WithArtifactBindings(t *testing.T) {
 	pt := PipelineTask{
-		Name: "deploy",
+		Name:    "deploy",
 		TaskRef: &TaskRef{Name: "deploy-task"},
 		Artifacts: &PipelineTaskArtifacts{
 			Inputs: []PipelineTaskArtifactBinding{

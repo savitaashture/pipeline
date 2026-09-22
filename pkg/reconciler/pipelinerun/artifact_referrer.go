@@ -37,16 +37,16 @@ type TaskArtifactResult struct {
 	MediaType string // e.g., "application/vnd.cyclonedx+json"
 }
 
-// AttachReferrers creates OCI referrer manifests linking non-buildOutput artifacts
-// to the buildOutput artifact (the subject). This implements the OCI referrers API
+// AttachReferrers creates OCI referrer manifests linking non-subject artifacts
+// to the subject artifact. This implements the OCI referrers API
 // for supply chain metadata (SBOMs, test results, etc.) attached to a build image.
 func AttachReferrers(ctx context.Context, artifacts []TaskArtifactResult, insecure bool, opts ...remote.Option) error {
-	// Find the build output (subject)
+	// Find the subject artifact
 	var subject *TaskArtifactResult
 	var referrers []TaskArtifactResult
 
 	for i := range artifacts {
-		if artifacts[i].Artifact.BuildOutput {
+		if artifacts[i].Artifact.Subject {
 			subject = &artifacts[i]
 		} else {
 			referrers = append(referrers, artifacts[i])
