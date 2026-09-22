@@ -651,13 +651,13 @@ func ApplyArtifactDeclarationPaths(spec *v1.TaskSpec) *v1.TaskSpec {
 
 	stringReplacements := map[string]string{}
 	for _, input := range spec.Artifacts.Inputs {
-		stringReplacements[fmt.Sprintf("inputs.%s.path", input.Name)] = filepath.Join("/workspace/artifacts/inputs", input.Name)
+		stringReplacements[fmt.Sprintf("inputs.%s.path", input.Name)] = filepath.Join(pipeline.ArtifactsDir, "inputs", input.Name)
 	}
 	for _, output := range spec.Artifacts.Outputs {
 		if output.Type == v1.ArtifactTypeReference {
-			stringReplacements[fmt.Sprintf("outputs.%s.uri", output.Name)] = filepath.Join("/workspace/artifacts/outputs", output.Name+".uri")
+			stringReplacements[fmt.Sprintf("outputs.%s.uri", output.Name)] = filepath.Join(pipeline.ArtifactsDir, "outputs", output.Name+".uri")
 		} else {
-			stringReplacements[fmt.Sprintf("outputs.%s.path", output.Name)] = filepath.Join("/workspace/artifacts/outputs", output.Name)
+			stringReplacements[fmt.Sprintf("outputs.%s.path", output.Name)] = filepath.Join(pipeline.ArtifactsDir, "outputs", output.Name)
 		}
 	}
 

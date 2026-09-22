@@ -276,9 +276,15 @@ func (e Entrypointer) Go() error {
 			}
 		}
 
-		// Create output artifact directories so steps can write to them
+		// Create output artifact directories so steps can write to them.
+		// For Content artifacts: Path is a directory and the step writes files into the directory.
+		// For Reference artifacts: Path is a .uri file and the the step writes a URI.
 		for _, ao := range e.ArtifactOutputs {
-			if mkErr := os.MkdirAll(filepath.Dir(ao.Path), 0o755); mkErr != nil {
+			dir := ao.Path
+			if ao.Type == "reference" {
+				dir = filepath.Dir(ao.Path)
+			}
+			if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
 				slog.Error("Error creating artifact output directory", slog.String("name", ao.Name), slog.Any("error", mkErr))
 			}
 		}

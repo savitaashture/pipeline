@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/tektoncd/pipeline/pkg/apis/pipeline"
 	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"github.com/tektoncd/pipeline/pkg/entrypoint"
 )
@@ -76,7 +77,7 @@ func ResolveArtifactInputsForTask(pt *v1.PipelineTask, taskArtifacts map[string]
 		inputs = append(inputs, entrypoint.ArtifactInput{
 			Name: binding.Name,
 			URI:  uri,
-			Path: filepath.Join("/workspace/artifacts/inputs", binding.Name),
+			Path: filepath.Join(pipeline.ArtifactsDir, "inputs", binding.Name),
 		})
 	}
 
