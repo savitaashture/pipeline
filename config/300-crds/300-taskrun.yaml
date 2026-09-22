@@ -3913,12 +3913,12 @@ spec:
                           associated with it.
                         type: object
                         properties:
-                          buildOutput:
-                            description: Indicate if the artifact is a build output or a by-product
-                            type: boolean
                           name:
                             description: The artifact's identifying category name
                             type: string
+                          subject:
+                            description: Indicate if the artifact is a build output or a by-product
+                            type: boolean
                           values:
                             description: A collection of values related to the artifact
                             type: array
@@ -3941,12 +3941,12 @@ spec:
                           associated with it.
                         type: object
                         properties:
-                          buildOutput:
-                            description: Indicate if the artifact is a build output or a by-product
-                            type: boolean
                           name:
                             description: The artifact's identifying category name
                             type: string
+                          subject:
+                            description: Indicate if the artifact is a build output or a by-product
+                            type: boolean
                           values:
                             description: A collection of values related to the artifact
                             type: array
@@ -4224,12 +4224,12 @@ spec:
                             associated with it.
                           type: object
                           properties:
-                            buildOutput:
-                              description: Indicate if the artifact is a build output or a by-product
-                              type: boolean
                             name:
                               description: The artifact's identifying category name
                               type: string
+                            subject:
+                              description: Indicate if the artifact is a build output or a by-product
+                              type: boolean
                             values:
                               description: A collection of values related to the artifact
                               type: array
@@ -4253,12 +4253,12 @@ spec:
                             associated with it.
                           type: object
                           properties:
-                            buildOutput:
-                              description: Indicate if the artifact is a build output or a by-product
-                              type: boolean
                             name:
                               description: The artifact's identifying category name
                               type: string
+                            subject:
+                              description: Indicate if the artifact is a build output or a by-product
+                              type: boolean
                             values:
                               description: A collection of values related to the artifact
                               type: array
@@ -4462,14 +4462,28 @@ spec:
                             required:
                               - name
                             properties:
-                              buildOutput:
-                                description: BuildOutput marks this artifact as the primary build output for referrer attachment
-                                type: boolean
+                              description:
+                                description: Description of the artifact.
+                                type: string
                               mediaType:
                                 description: MediaType hint for the artifact (e.g., application/vnd.tekton.artifact.junit.v1+xml)
                                 type: string
                               name:
                                 description: Name of the artifact (used in path substitution and pipeline bindings)
+                                type: string
+                              subject:
+                                description: |-
+                                  Subject marks this artifact as the primary build output — the SLSA
+                                  attestation subject. Multiple artifacts can be subjects.
+                                type: boolean
+                              type:
+                                description: 'Type of the artifact: "reference" or "content". Defaults to "content".'
+                                type: string
+                              value:
+                                description: |-
+                                  Value surfaces an artifact produced by a Step, using
+                                  $(steps.<step>.artifacts.<name>). Mirrors TaskResult.Value. When set,
+                                  Type and MediaType are inherited from the referenced step artifact.
                                 type: string
                           x-kubernetes-list-type: atomic
                         outputs:
@@ -4481,14 +4495,28 @@ spec:
                             required:
                               - name
                             properties:
-                              buildOutput:
-                                description: BuildOutput marks this artifact as the primary build output for referrer attachment
-                                type: boolean
+                              description:
+                                description: Description of the artifact.
+                                type: string
                               mediaType:
                                 description: MediaType hint for the artifact (e.g., application/vnd.tekton.artifact.junit.v1+xml)
                                 type: string
                               name:
                                 description: Name of the artifact (used in path substitution and pipeline bindings)
+                                type: string
+                              subject:
+                                description: |-
+                                  Subject marks this artifact as the primary build output — the SLSA
+                                  attestation subject. Multiple artifacts can be subjects.
+                                type: boolean
+                              type:
+                                description: 'Type of the artifact: "reference" or "content". Defaults to "content".'
+                                type: string
+                              value:
+                                description: |-
+                                  Value surfaces an artifact produced by a Step, using
+                                  $(steps.<step>.artifacts.<name>). Mirrors TaskResult.Value. When set,
+                                  Type and MediaType are inherited from the referenced step artifact.
                                 type: string
                           x-kubernetes-list-type: atomic
                     description:

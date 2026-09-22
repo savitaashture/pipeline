@@ -305,7 +305,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `name` _string_ | The artifact's identifying category name |  |  |
 | `values` _[ArtifactValue](#artifactvalue) array_ | A collection of values related to the artifact |  |  |
-| `buildOutput` _boolean_ | Indicate if the artifact is a build output or a by-product |  |  |
+| `subject` _boolean_ | Indicate if the artifact is a build output or a by-product |  |  |
 
 
 #### ArtifactDeclaration
@@ -322,9 +322,11 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `name` _string_ | Name of the artifact (used in path substitution and pipeline bindings) |  |  |
+| `description` _string_ | Description of the artifact. |  | Optional: \{\} <br /> |
 | `type` _[ArtifactType](#artifacttype)_ | Type of the artifact: "reference" or "content". Defaults to "content". |  | Optional: \{\} <br /> |
 | `mediaType` _string_ | MediaType hint for the artifact (e.g., application/vnd.tekton.artifact.junit.v1+xml) |  | Optional: \{\} <br /> |
 | `subject` _boolean_ | Subject marks this artifact as the primary build output — the SLSA<br />attestation subject. Multiple artifacts can be subjects. |  | Optional: \{\} <br /> |
+| `value` _string_ | Value surfaces an artifact produced by a Step, using<br />$(steps.<step>.artifacts.<name>). Mirrors TaskResult.Value. When set,<br />Type and MediaType are inherited from the referenced step artifact. |  | Optional: \{\} <br /> |
 
 
 #### ArtifactDeclarations

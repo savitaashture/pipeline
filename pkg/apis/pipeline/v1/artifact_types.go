@@ -51,6 +51,9 @@ const (
 type ArtifactDeclaration struct {
 	// Name of the artifact (used in path substitution and pipeline bindings)
 	Name string `json:"name"`
+	// Description of the artifact.
+	// +optional
+	Description string `json:"description,omitempty"`
 	// Type of the artifact: "reference" or "content". Defaults to "content".
 	// +optional
 	Type ArtifactType `json:"type,omitempty"`
@@ -61,6 +64,11 @@ type ArtifactDeclaration struct {
 	// attestation subject. Multiple artifacts can be subjects.
 	// +optional
 	Subject bool `json:"subject,omitempty"`
+	// Value surfaces an artifact produced by a Step, using
+	// $(steps.<step>.artifacts.<name>). Mirrors TaskResult.Value. When set,
+	// Type and MediaType are inherited from the referenced step artifact.
+	// +optional
+	Value string `json:"value,omitempty"`
 }
 
 // PipelineTaskArtifacts configures artifact bindings for a PipelineTask.
@@ -86,7 +94,7 @@ type Artifact struct {
 	// A collection of values related to the artifact
 	Values []ArtifactValue `json:"values,omitempty"`
 	// Indicate if the artifact is a build output or a by-product
-	BuildOutput bool `json:"buildOutput,omitempty"`
+	Subject bool `json:"subject,omitempty"`
 }
 
 // ArtifactValue represents a specific value or data element within an Artifact.
@@ -154,13 +162,13 @@ func (a *Artifacts) Merge(another *Artifacts) {
 		for _, v := range another.Outputs {
 			_, ok := outputMap[v.Name]
 			if !ok {
-				outputMap[v.Name] = Artifact{Name: v.Name, Values: []ArtifactValue{}, BuildOutput: v.BuildOutput}
+				outputMap[v.Name] = Artifact{Name: v.Name, Values: []ArtifactValue{}, Subject: v.Subject}
 			}
-			// only update buildOutput to true.
+			// only update subject to true.
 			// Do not convert to false if it was true before.
-			if v.BuildOutput {
+			if v.Subject {
 				art := outputMap[v.Name]
-				art.BuildOutput = v.BuildOutput
+				art.Subject = v.Subject
 				outputMap[v.Name] = art
 			}
 			for _, vv := range v.Values {
@@ -182,9 +190,9 @@ func (a *Artifacts) Merge(another *Artifacts) {
 
 	for _, v := range outputMap {
 		newOutputs = append(newOutputs, Artifact{
-			Name:        v.Name,
-			Values:      v.Values,
-			BuildOutput: v.BuildOutput,
+			Name:    v.Name,
+			Values:  v.Values,
+			Subject: v.Subject,
 		})
 	}
 	a.Inputs = newInputs

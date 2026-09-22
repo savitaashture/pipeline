@@ -431,7 +431,7 @@ func schema_pkg_apis_pipeline_v1_Artifact(ref common.ReferenceCallback) common.O
 							},
 						},
 					},
-					"buildOutput": {
+					"subject": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Indicate if the artifact is a build output or a by-product",
 							Type:        []string{"boolean"},
@@ -461,6 +461,13 @@ func schema_pkg_apis_pipeline_v1_ArtifactDeclaration(ref common.ReferenceCallbac
 							Format:      "",
 						},
 					},
+					"description": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Description of the artifact.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"type": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Type of the artifact: \"reference\" or \"content\". Defaults to \"content\".",
@@ -479,6 +486,13 @@ func schema_pkg_apis_pipeline_v1_ArtifactDeclaration(ref common.ReferenceCallbac
 						SchemaProps: spec.SchemaProps{
 							Description: "Subject marks this artifact as the primary build output — the SLSA attestation subject. Multiple artifacts can be subjects.",
 							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
+					"value": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Value surfaces an artifact produced by a Step, using $(steps.<step>.artifacts.<name>). Mirrors TaskResult.Value. When set, Type and MediaType are inherited from the referenced step artifact.",
+							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
