@@ -84,12 +84,16 @@ func UploadArtifact(ctx context.Context, output ArtifactOutput, insecure bool, o
 	if err != nil {
 		return nil, fmt.Errorf("creating tar.gz archive: %w", err)
 	}
-	layer, err := tarball.LayerFromReader(buf, tarball.WithMediaType(types.MediaType(output.MediaType)))
+	layerMediaType := types.MediaType(output.MediaType)
+	if layerMediaType == "" {
+		layerMediaType = types.OCILayer
+	}
+	layer, err := tarball.LayerFromReader(buf, tarball.WithMediaType(layerMediaType))
 	if err != nil {
 		return nil, fmt.Errorf("creating layer: %w", err)
 	}
 
-	img, err := mutate.AppendLayers(empty.Image, layer)
+	img, err := mutate.AppendLayers(mutate.MediaType(empty.Image, types.OCIManifestSchema1), layer)
 	if err != nil {
 		return nil, fmt.Errorf("creating image with layer: %w", err)
 	}
