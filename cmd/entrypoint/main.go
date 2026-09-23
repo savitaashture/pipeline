@@ -24,6 +24,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -62,6 +63,7 @@ var (
 	artifactInputs             = flag.String("artifact_inputs", "", "JSON-encoded artifact inputs to download before step execution")
 	artifactOutputs            = flag.String("artifact_outputs", "", "JSON-encoded artifact outputs to upload after step execution")
 	artifactInsecure           = flag.Bool("artifact_insecure", false, "Use plain HTTP for artifact registry")
+	artifactDockerConfig       = flag.String("artifact_docker_config", "", "Docker config JSON for artifact registry authentication")
 )
 
 const (
@@ -173,8 +175,17 @@ func main() {
 		}
 		e.ArtifactOutputs = ao
 	}
-	// to resolve the 401 authentication issue with OCI as tekton knows about the docker config file.
 	if len(e.ArtifactInputs) > 0 || len(e.ArtifactOutputs) > 0 {
+		// If controller injected secret data for artifact registry,
+		// write it to a known location so DefaultKeychain finds it for the authentication
+		if *artifactDockerConfig != "" {
+			cfgDir := filepath.Join(os.TempDir(), "tekton-artifact-docker")
+			if err := os.MkdirAll(cfgDir, 0o700); err == nil {
+				if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(*artifactDockerConfig), 0o600); err == nil {
+					os.Setenv("DOCKER_CONFIG", cfgDir)
+				}
+			}
+		}
 		e.ArtifactRemoteOpts = append(e.ArtifactRemoteOpts, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	}
 
