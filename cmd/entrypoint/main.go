@@ -28,6 +28,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/tektoncd/pipeline/cmd/entrypoint/subcommands"
 	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1/types"
 	"github.com/tektoncd/pipeline/pkg/credentials/dockercreds"
@@ -170,6 +172,10 @@ func main() {
 			log.Fatalf("Error parsing artifact outputs: %v", err)
 		}
 		e.ArtifactOutputs = ao
+	}
+	// to resolve the 401 authentication issue with OCI as tekton knows about the docker config file.
+	if len(e.ArtifactInputs) > 0 || len(e.ArtifactOutputs) > 0 {
+		e.ArtifactRemoteOpts = append(e.ArtifactRemoteOpts, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	}
 
 	// Copy any creds injected by the controller into the $HOME directory of the current

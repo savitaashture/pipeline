@@ -61,7 +61,7 @@ func TestResolveArtifactInputsForTask(t *testing.T) {
 	if resolved[0].URI != "registry:5000/artifacts/results@sha256:abc123" {
 		t.Errorf("expected URI from upstream, got %q", resolved[0].URI)
 	}
-	if resolved[0].Path != "/workspace/artifacts/inputs/data" {
+	if resolved[0].Path != "/tekton/artifacts/inputs/data" {
 		t.Errorf("expected path, got %q", resolved[0].Path)
 	}
 }
