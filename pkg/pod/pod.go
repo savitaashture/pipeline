@@ -45,6 +45,7 @@ import (
 	"knative.dev/pkg/changeset"
 	"knative.dev/pkg/kmap"
 	"knative.dev/pkg/kmeta"
+	"knative.dev/pkg/system"
 )
 
 const (
@@ -263,6 +264,16 @@ func (b *Builder) Build(ctx context.Context, taskRun *v1.TaskRun, taskSpec v1.Ta
 				if !hasInsecure {
 					commonExtraEntrypointArgs = append(commonExtraEntrypointArgs, "-artifact_insecure")
 				}
+			}
+		}
+		// Get secret for OCI credentials from the system namespace (ex: tekton-pipelines)and inject
+		// the docker config JSON as an entrypoint arg.
+		if artifactStorageCfg != nil && artifactStorageCfg.OCICredentialsSecret != "" {
+			dockerCfgJSON, err := readArtifactCredentials(ctx, b.KubeClient, artifactStorageCfg.OCICredentialsSecret)
+			if err != nil {
+				log.Printf("warning: failed to read artifact credentials secret: %v", err)
+			} else if len(dockerCfgJSON) > 0 {
+				commonExtraEntrypointArgs = append(commonExtraEntrypointArgs, "-artifact_docker_config", string(dockerCfgJSON))
 			}
 		}
 	}
@@ -816,4 +827,23 @@ func IsNativeSidecarSupport(serverVersion *version.Info) bool {
 		return true
 	}
 	return false
+}
+
+// readArtifactCredentials reads the named secret from the system namespace.
+// The returned data can be passed directly to the entrypoint to authenticate
+// without needing the secret in the TaskRun's namespace.
+func readArtifactCredentials(ctx context.Context, kubeclient kubernetes.Interface, secretName string) ([]byte, error) {
+	src, err := kubeclient.CoreV1().Secrets(system.Namespace()).Get(ctx, secretName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("reading artifact credentials secret %s/%s: %w", system.Namespace(), secretName, err)
+	}
+	// kubernetes.io/dockerconfigjson secrets store creds under this key
+	if data, ok := src.Data[corev1.DockerConfigJsonKey]; ok && len(data) > 0 {
+		return data, nil
+	}
+	// Fallback for kubernetes.io/dockercfg secrets
+	if data, ok := src.Data[corev1.DockerConfigKey]; ok && len(data) > 0 {
+		return data, nil
+	}
+	return nil, fmt.Errorf("secret %s/%s has no docker config data", system.Namespace(), secretName)
 }
