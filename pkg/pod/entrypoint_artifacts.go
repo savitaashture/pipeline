@@ -27,7 +27,7 @@ import (
 
 // artifactEntrypointArgs generates entrypoint CLI args for artifact transport
 // based on the TaskSpec's artifact declarations and the artifact storage config.
-func artifactEntrypointArgs(taskSpec *v1.TaskSpec, ociRepository string, insecure bool) []string {
+func artifactEntrypointArgs(taskSpec *v1.TaskSpec, ociRepository string, insecure bool, inlineThreshold int) []string {
 	if taskSpec == nil || taskSpec.Artifacts == nil {
 		return nil
 	}
@@ -96,6 +96,10 @@ func artifactEntrypointArgs(taskSpec *v1.TaskSpec, ociRepository string, insecur
 
 	if insecure {
 		args = append(args, "-artifact_insecure")
+	}
+
+	if inlineThreshold > 0 {
+		args = append(args, "-artifact_inline_threshold", fmt.Sprintf("%d", inlineThreshold))
 	}
 
 	return args

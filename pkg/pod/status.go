@@ -412,9 +412,14 @@ func setStepArtifactsValueFromTerminationMessageRunResult(results []result.RunRe
 			// Handle TEP-0164 uploaded artifacts: key is "artifact-<name>", value is a URI
 			if strings.HasPrefix(r.Key, "artifact-") {
 				name := strings.TrimPrefix(r.Key, "artifact-")
+				var av v1.ArtifactValue
+				if err := json.Unmarshal([]byte(r.Value), &av); err != nil {
+					// Fallback: treat as plain URI for backward compatibility
+					av = v1.ArtifactValue{Uri: r.Value}
+				}
 				artifacts.Outputs = append(artifacts.Outputs, v1.Artifact{
 					Name:   name,
-					Values: []v1.ArtifactValue{{Uri: r.Value}},
+					Values: []v1.ArtifactValue{av},
 				})
 				continue
 			}

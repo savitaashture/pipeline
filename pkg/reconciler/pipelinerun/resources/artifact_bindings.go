@@ -30,14 +30,14 @@ import (
 // from the pipeline reconciler to the pod builder.
 const ArtifactInputsAnnotation = "tekton.dev/artifact-inputs"
 
-// ResolveArtifactBinding resolves a "from" reference (e.g., "tasks.build.outputs.image")
-// to the URI of the artifact from completed TaskRun artifacts.
+// resolveArtifactBinding resolves a "from" reference (e.g., "tasks.build.outputs.image")
+// to the ArtifactValue from completed TaskRun artifacts.
 // The artifacts map is keyed by PipelineTask name.
-func ResolveArtifactBinding(from string, artifacts map[string]*v1.Artifacts) (string, error) {
+func resolveArtifactBinding(from string, artifacts map[string]*v1.Artifacts) (*v1.ArtifactValue, error) {
 	// Expected format: tasks.<taskName>.outputs.<artifactName>
 	parts := strings.Split(from, ".")
 	if len(parts) != 4 || parts[0] != "tasks" || parts[2] != "outputs" {
-		return "", fmt.Errorf("invalid artifact binding format %q, expected 'tasks.<taskName>.outputs.<artifactName>'", from)
+		return nil, fmt.Errorf("invalid artifact binding format %q, expected 'tasks.<taskName>.outputs.<artifactName>'", from)
 	}
 
 	taskName := parts[1]
@@ -45,20 +45,19 @@ func ResolveArtifactBinding(from string, artifacts map[string]*v1.Artifacts) (st
 
 	taskArtifacts, ok := artifacts[taskName]
 	if !ok {
-		return "", fmt.Errorf("task %q not found in completed artifacts", taskName)
+		return nil, fmt.Errorf("task %q not found in completed artifacts", taskName)
 	}
 
 	for _, a := range taskArtifacts.Outputs {
 		if a.Name == artifactName {
 			if len(a.Values) == 0 {
-				return "", fmt.Errorf("artifact %q from task %q has no values", artifactName, taskName)
+				return nil, fmt.Errorf("artifact %q from task %q has no values", artifactName, taskName)
 			}
-			// Return the first (most recent) value's URI
-			return a.Values[0].Uri, nil
+			return &a.Values[0], nil
 		}
 	}
 
-	return "", fmt.Errorf("artifact %q not found in task %q outputs", artifactName, taskName)
+	return nil, fmt.Errorf("artifact %q not found in task %q outputs", artifactName, taskName)
 }
 
 // ResolveArtifactInputsForTask resolves all artifact input bindings for a PipelineTask,
@@ -70,15 +69,19 @@ func ResolveArtifactInputsForTask(pt *v1.PipelineTask, taskArtifacts map[string]
 
 	var inputs []entrypoint.ArtifactInput
 	for _, binding := range pt.Artifacts.Inputs {
-		uri, err := ResolveArtifactBinding(binding.From, taskArtifacts)
+		artifactValue, err := resolveArtifactBinding(binding.From, taskArtifacts)
 		if err != nil {
 			return nil, fmt.Errorf("resolving artifact input %q: %w", binding.Name, err)
 		}
-		inputs = append(inputs, entrypoint.ArtifactInput{
+		input := entrypoint.ArtifactInput{
 			Name: binding.Name,
-			URI:  uri,
+			URI:  artifactValue.Uri,
 			Path: filepath.Join(pipeline.ArtifactsDir, "inputs", binding.Name),
-		})
+		}
+		if artifactValue.Inline != "" {
+			input.Inline = artifactValue.Inline
+		}
+		inputs = append(inputs, input)
 	}
 
 	return inputs, nil

@@ -101,6 +101,25 @@ type Artifact struct {
 type ArtifactValue struct {
 	Digest map[Algorithm]string `json:"digest,omitempty"` // Algorithm-specific digests for verifying the content (e.g., SHA256)
 	Uri    string               `json:"uri,omitempty"`    // Location where the artifact value can be retrieved
+	// Ref is a backend-specific storage reference. Present only for content
+	// artifacts stored externally; absent for reference artifacts and inline content.
+	// +optional
+	Ref *ArtifactStorageRef `json:"ref,omitempty"`
+	// content size in bytes, letting consumers and UIs know the artifact size before fetching.
+	// +optional
+	Size int64 `json:"size,omitempty"`
+	// Inline holds small content embedded directly in the status (base64-encoded),
+	// avoiding external storage overhead.
+	// +optional
+	Inline string `json:"inline,omitempty"`
+}
+
+// ArtifactStorageRef identifies where a content artifact is stored in a backend.
+type ArtifactStorageRef struct {
+	Backend     string `json:"backend"`
+	Location    string `json:"location"`
+	Digest      string `json:"digest"`
+	ContentType string `json:"contentType,omitempty"`
 }
 
 // TaskRunStepArtifact represents an artifact produced or used by a step within a task run.

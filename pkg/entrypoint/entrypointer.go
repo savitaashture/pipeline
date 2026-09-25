@@ -185,6 +185,9 @@ type Entrypointer struct {
 	ArtifactOutputs []ArtifactOutput
 	// ArtifactInsecure allows plain HTTP for artifact registry.
 	ArtifactInsecure bool
+	// ArtifactInlineThreshold is the size in bytes below which content artifacts
+	// are base64-inlined in the termination message instead of uploaded to OCI.
+	ArtifactInlineThreshold int
 	// ArtifactRemoteOpts are additional options for OCI remote operations (used in testing).
 	ArtifactRemoteOpts []remote.Option
 }
@@ -312,13 +315,14 @@ func (e Entrypointer) Go() error {
 				// Use a fresh context for uploads — the step context may be cancelled by the cancellation watcher
 				uploadCtx := context.Background()
 				for _, ao := range e.ArtifactOutputs {
-					av, uploadErr := UploadArtifact(uploadCtx, ao, e.ArtifactInsecure, e.ArtifactRemoteOpts...)
+					av, uploadErr := UploadArtifact(uploadCtx, ao, e.ArtifactInsecure, e.ArtifactInlineThreshold, e.ArtifactRemoteOpts...)
 					if uploadErr != nil {
 						slog.Error("Error uploading artifact", slog.String("name", ao.Name), slog.Any("error", uploadErr))
 					} else {
+						avJSON, _ := json.Marshal(av)
 						output = append(output, result.RunResult{
 							Key:        fmt.Sprintf("artifact-%s", ao.Name),
-							Value:      av.Uri,
+							Value:      string(avJSON),
 							ResultType: result.StepArtifactsResultType,
 						})
 					}

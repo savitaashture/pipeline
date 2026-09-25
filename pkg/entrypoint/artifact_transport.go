@@ -22,6 +22,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -35,15 +36,17 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/tektoncd/pipeline/pkg/apis/config"
 
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
 // ArtifactInput describes an artifact to download before step execution.
 type ArtifactInput struct {
-	Name string `json:"name"` // artifact name
-	URI  string `json:"uri"`  // OCI URI (e.g., "registry:5000/artifacts/test@sha256:...")
-	Path string `json:"path"` // local path to extract to
+	Name   string `json:"name"`             // artifact name
+	URI    string `json:"uri,omitempty"`    // OCI URI (e.g., "registry:5000/artifacts/test@sha256:...")
+	Path   string `json:"path"`             // local path to extract to
+	Inline string `json:"inline,omitempty"` // base64-encoded tar.gz content (used instead of URI when set)
 }
 
 // ArtifactOutput describes an artifact to upload after step execution.
@@ -64,19 +67,15 @@ type ArtifactOutput struct {
 // is rejected, since Tekton must be able to guarantee every propagated
 // reference is digest-pinned.
 //
-// For "content" artifacts, this archives output.Path and pushes it as an OCI
-// image with a single tar.gz layer to output.Repository, returning an
-// ArtifactValue with the pushed digest-based URI.
-func UploadArtifact(ctx context.Context, output ArtifactOutput, insecure bool, opts ...remote.Option) (*pipelinev1.ArtifactValue, error) {
+// For "content" artifacts, this archives output.Path into a tar.gz buffer and
+// decides based on inlineThreshold whether to inline the content in the
+// termination message or push it to OCI:
+//   - size <= inlineThreshold (and threshold > 0): base64-encode and return inline
+//   - size > inlineThreshold with repository: push to OCI
+//   - size > inlineThreshold without repository: error (no fallback)
+func UploadArtifact(ctx context.Context, output ArtifactOutput, insecure bool, inlineThreshold int, opts ...remote.Option) (*pipelinev1.ArtifactValue, error) {
 	if output.Type == pipelinev1.ArtifactTypeReference {
 		return readReferenceArtifact(output)
-	}
-
-	if output.Repository == "" {
-		// TEP-0192 "disabled storage" default: content artifacts are still
-		// digested and recorded, just not uploaded, when no storage backend
-		// is configured.
-		return digestOnlyContentArtifact(output.Path)
 	}
 
 	// Create a tar.gz buffer from the output path
@@ -84,11 +83,45 @@ func UploadArtifact(ctx context.Context, output ArtifactOutput, insecure bool, o
 	if err != nil {
 		return nil, fmt.Errorf("creating tar.gz archive: %w", err)
 	}
+
+	dataBytes := buf.Bytes()
+	dataSize := int64(len(dataBytes))
+
+	h := sha256.New()
+	h.Write(dataBytes)
+	digestHex := fmt.Sprintf("%x", h.Sum(nil))
+
+	// check data if it fits within the threshold
+	if inlineThreshold > 0 && int(dataSize) <= inlineThreshold {
+		return &pipelinev1.ArtifactValue{
+			Digest: map[pipelinev1.Algorithm]string{"sha256": digestHex},
+			Size:   dataSize,
+			Inline: base64.StdEncoding.EncodeToString(dataBytes),
+		}, nil
+	}
+
+	// No repository configured
+	if output.Repository == "" {
+		// TEP-0192 "disabled storage" default: content artifacts are still
+		// digested and recorded, just not uploaded, when no storage backend
+		// is configured.
+		if inlineThreshold > 0 {
+			return nil, fmt.Errorf("artifact %q (%d bytes) exceeds inline threshold (%d) and no storage backend is configured",
+				output.Name, dataSize, inlineThreshold)
+		}
+		// "disabled storage" default is digest-only
+		return &pipelinev1.ArtifactValue{
+			Digest: map[pipelinev1.Algorithm]string{"sha256": digestHex},
+			Size:   dataSize,
+		}, nil
+	}
+
+	// OCI upload path
 	layerMediaType := types.MediaType(output.MediaType)
 	if layerMediaType == "" {
 		layerMediaType = types.OCILayer
 	}
-	layer, err := tarball.LayerFromReader(buf, tarball.WithMediaType(layerMediaType))
+	layer, err := tarball.LayerFromReader(bytes.NewReader(dataBytes), tarball.WithMediaType(layerMediaType))
 	if err != nil {
 		return nil, fmt.Errorf("creating layer: %w", err)
 	}
@@ -98,7 +131,6 @@ func UploadArtifact(ctx context.Context, output ArtifactOutput, insecure bool, o
 		return nil, fmt.Errorf("creating image with layer: %w", err)
 	}
 
-	// Parse the repository reference
 	nameOpts := []name.Option{}
 	if insecure {
 		nameOpts = append(nameOpts, name.Insecure)
@@ -116,36 +148,20 @@ func UploadArtifact(ctx context.Context, output ArtifactOutput, insecure bool, o
 
 	ref := repo.Digest(digest.String())
 
-	// Push
 	remoteOpts := append([]remote.Option{remote.WithContext(ctx)}, opts...)
 	if err := remote.Write(ref, img, remoteOpts...); err != nil {
 		return nil, fmt.Errorf("pushing artifact to %s: %w", ref.String(), err)
 	}
 
 	return &pipelinev1.ArtifactValue{
-		Uri: ref.String(),
-		Digest: map[pipelinev1.Algorithm]string{
-			"sha256": strings.TrimPrefix(digest.String(), "sha256:"),
-		},
-	}, nil
-}
-
-// digestOnlyContentArtifact computes a digest for the content at path
-// without uploading anything, for use when no storage backend is
-// configured. It reuses the same tar.gz representation as the upload path
-// so the digest is stable regardless of whether storage is later enabled.
-func digestOnlyContentArtifact(path string) (*pipelinev1.ArtifactValue, error) {
-	buf, err := createTarGzBuffer(path)
-	if err != nil {
-		return nil, fmt.Errorf("creating tar.gz archive: %w", err)
-	}
-	h := sha256.New()
-	if _, err := io.Copy(h, buf); err != nil {
-		return nil, fmt.Errorf("digesting content: %w", err)
-	}
-	return &pipelinev1.ArtifactValue{
-		Digest: map[pipelinev1.Algorithm]string{
-			"sha256": fmt.Sprintf("%x", h.Sum(nil)),
+		Uri:    ref.String(),
+		Digest: map[pipelinev1.Algorithm]string{"sha256": strings.TrimPrefix(digest.String(), "sha256:")},
+		Size:   dataSize,
+		Ref: &pipelinev1.ArtifactStorageRef{
+			Backend:     config.DefaultBackend,
+			Location:    ref.String(),
+			Digest:      digest.String(),
+			ContentType: string(layerMediaType),
 		},
 	}, nil
 }
@@ -181,7 +197,12 @@ func readReferenceArtifact(output ArtifactOutput) (*pipelinev1.ArtifactValue, er
 }
 
 // DownloadArtifact pulls an OCI artifact and extracts its layer contents to input.Path.
+// If the input carries inline data, it decodes and extracts directly without any network call.
 func DownloadArtifact(ctx context.Context, input ArtifactInput, insecure bool, opts ...remote.Option) error {
+	if input.Inline != "" {
+		return extractInlineArtifact(input.Inline, input.Path)
+	}
+
 	nameOpts := []name.Option{}
 	if insecure {
 		nameOpts = append(nameOpts, name.Insecure)
@@ -274,8 +295,21 @@ func extractLayer(layer v1.Layer, dst string) error {
 		return err
 	}
 	defer rc.Close()
+	return extractTarGz(rc, dst)
+}
 
-	gr, err := gzip.NewReader(rc)
+// extractInlineArtifact decodes base64-encoded tar.gz data and extracts it to dst.
+func extractInlineArtifact(encoded string, dst string) error {
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return fmt.Errorf("decoding inline artifact: %w", err)
+	}
+	return extractTarGz(bytes.NewReader(data), dst)
+}
+
+// extractTarGz decompresses a gzip stream and extracts the tar entries to dst.
+func extractTarGz(r io.Reader, dst string) error {
+	gr, err := gzip.NewReader(r)
 	if err != nil {
 		return err
 	}
@@ -291,7 +325,7 @@ func extractLayer(layer v1.Layer, dst string) error {
 			return err
 		}
 
-		target := filepath.Join(dst, header.Name) //nolint:gosec // controlled input from our own uploads
+		target := filepath.Join(dst, header.Name)
 		if !strings.HasPrefix(target, filepath.Clean(dst)+string(os.PathSeparator)) {
 			return fmt.Errorf("invalid tar entry: %s", header.Name)
 		}
@@ -309,14 +343,12 @@ func extractLayer(layer v1.Layer, dst string) error {
 			if err != nil {
 				return err
 			}
-			h := sha256.New()
-			if _, err := io.Copy(f, io.TeeReader(tr, h)); err != nil { //nolint:gosec // size bounded by OCI layer
+			if _, err := io.Copy(f, tr); err != nil { //nolint:gosec // size bounded by artifact content
 				f.Close()
 				return err
 			}
 			f.Close()
 		}
 	}
-
 	return nil
 }
