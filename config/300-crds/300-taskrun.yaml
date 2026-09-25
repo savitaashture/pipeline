@@ -2084,6 +2084,25 @@ spec:
                                       type: string
                                   uri:
                                     type: string
+                                  inline:
+                                    description: small content (base64-encoded) embedded directly in the status.
+                                    type: string
+                                  size:
+                                    description: size of contents in bytes.
+                                    type: integer
+                                    format: int64
+                                  ref:
+                                    description: storage reference for backend.
+                                    type: object
+                                    properties:
+                                      backend:
+                                        type: string
+                                      location:
+                                        type: string
+                                      digest:
+                                        type: string
+                                      contentType:
+                                        type: string
                       name:
                         type: string
                       outputs:
@@ -2111,6 +2130,25 @@ spec:
                                       type: string
                                   uri:
                                     type: string
+                                  inline:
+                                    description: small content (base64-encoded) embedded directly in the status.
+                                    type: string
+                                  size:
+                                    description: size of contents in bytes.
+                                    type: integer
+                                    format: int64
+                                  ref:
+                                    description: storage reference for backend.
+                                    type: object
+                                    properties:
+                                      backend:
+                                        type: string
+                                      location:
+                                        type: string
+                                      digest:
+                                        type: string
+                                      contentType:
+                                        type: string
                       provenance:
                         description: Provenance
                         type: object
@@ -3936,6 +3974,25 @@ spec:
                                     type: string
                                 uri:
                                   type: string
+                                inline:
+                                  description: small content (base64-encoded) embedded directly in the status.
+                                  type: string
+                                size:
+                                  description: size of contents in bytes.
+                                  type: integer
+                                  format: int64
+                                ref:
+                                  description: storage reference for backend.
+                                  type: object
+                                  properties:
+                                    backend:
+                                      type: string
+                                    location:
+                                      type: string
+                                    digest:
+                                      type: string
+                                    contentType:
+                                      type: string
                       x-kubernetes-list-type: atomic
                     outputs:
                       type: array
@@ -3964,6 +4021,25 @@ spec:
                                     type: string
                                 uri:
                                   type: string
+                                inline:
+                                  description: small content (base64-encoded) embedded directly in the status.
+                                  type: string
+                                size:
+                                  description: size of contents in bytes.
+                                  type: integer
+                                  format: int64
+                                ref:
+                                  description: storage reference for backend.
+                                  type: object
+                                  properties:
+                                    backend:
+                                      type: string
+                                    location:
+                                      type: string
+                                    digest:
+                                      type: string
+                                    contentType:
+                                      type: string
                       x-kubernetes-list-type: atomic
                 completionTime:
                   description: CompletionTime is the time the build completed.

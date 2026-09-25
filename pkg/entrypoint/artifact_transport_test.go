@@ -58,7 +58,7 @@ func TestUploadAndDownloadArtifact(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	av, err := UploadArtifact(ctx, output, true, remote.WithTransport(srv.Client().Transport))
+	av, err := UploadArtifact(ctx, output, true, 0, remote.WithTransport(srv.Client().Transport))
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -71,6 +71,12 @@ func TestUploadAndDownloadArtifact(t *testing.T) {
 	}
 	if _, ok := av.Digest["sha256"]; !ok {
 		t.Error("expected sha256 digest")
+	}
+	if av.Ref == nil {
+		t.Error("expected Ref to be populated for OCI upload")
+	}
+	if av.Size == 0 {
+		t.Error("expected non-zero Size")
 	}
 
 	// Download to a new dir
@@ -119,7 +125,7 @@ func TestUploadArtifact_EmptyDir(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	av, err := UploadArtifact(ctx, output, true, remote.WithTransport(srv.Client().Transport))
+	av, err := UploadArtifact(ctx, output, true, 0, remote.WithTransport(srv.Client().Transport))
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -154,7 +160,7 @@ func TestUploadArtifact_ReferenceType(t *testing.T) {
 		Path: uriFile,
 	}
 
-	av, err := UploadArtifact(context.Background(), output, false)
+	av, err := UploadArtifact(context.Background(), output, false, 0)
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -180,7 +186,7 @@ func TestUploadArtifact_ReferenceType_NoDigest(t *testing.T) {
 		Path: uriFile,
 	}
 
-	if _, err := UploadArtifact(context.Background(), output, false); err == nil {
+	if _, err := UploadArtifact(context.Background(), output, false, 0); err == nil {
 		t.Fatal("expected error for reference artifact missing a digest")
 	}
 }
@@ -200,7 +206,7 @@ func TestUploadArtifact_ContentType_NoRepository_DigestOnly(t *testing.T) {
 		// Repository intentionally left empty.
 	}
 
-	av, err := UploadArtifact(context.Background(), output, false)
+	av, err := UploadArtifact(context.Background(), output, false, 0)
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -209,5 +215,96 @@ func TestUploadArtifact_ContentType_NoRepository_DigestOnly(t *testing.T) {
 	}
 	if av.Digest["sha256"] == "" {
 		t.Error("expected a sha256 digest even when storage is disabled")
+	}
+}
+
+func TestUploadArtifact_InlineSmallContent(t *testing.T) {
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "small.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := ArtifactOutput{
+		Name: "small",
+		Type: "content",
+		Path: srcDir,
+	}
+
+	av, err := UploadArtifact(context.Background(), output, false, 4096)
+	if err != nil {
+		t.Fatalf("UploadArtifact() error = %v", err)
+	}
+	if av.Inline == "" {
+		t.Fatal("expected Inline to be populated for small content")
+	}
+	if av.Uri != "" {
+		t.Errorf("expected no Uri for inlined content, got %q", av.Uri)
+	}
+	if av.Ref != nil {
+		t.Error("expected no Ref for inlined content")
+	}
+	if av.Digest["sha256"] == "" {
+		t.Error("expected sha256 digest for inlined content")
+	}
+	if av.Size == 0 {
+		t.Error("expected non-zero Size for inlined content")
+	}
+}
+
+func TestUploadArtifact_InlineExceedsThreshold_NoRepo_Error(t *testing.T) {
+	srcDir := t.TempDir()
+	// Write content larger than the threshold
+	if err := os.WriteFile(filepath.Join(srcDir, "big.bin"), make([]byte, 2000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := ArtifactOutput{
+		Name: "big",
+		Type: "content",
+		Path: srcDir,
+	}
+
+	_, err := UploadArtifact(context.Background(), output, false, 100)
+	if err == nil {
+		t.Fatal("expected error when content exceeds inline threshold and no repo is configured")
+	}
+	if !strings.Contains(err.Error(), "exceeds inline threshold") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestUploadArtifact_InlineExceedsThreshold_WithRepo_UploadsToOCI(t *testing.T) {
+	reg := registry.New()
+	srv := httptest.NewServer(reg)
+	defer srv.Close()
+	registryHost := strings.TrimPrefix(srv.URL, "http://")
+
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "big.bin"), make([]byte, 2000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := ArtifactOutput{
+		Name:       "big",
+		Type:       "content",
+		Path:       srcDir,
+		Repository: fmt.Sprintf("%s/artifacts/big", registryHost),
+	}
+
+	av, err := UploadArtifact(context.Background(), output, true, 100, remote.WithTransport(srv.Client().Transport))
+	if err != nil {
+		t.Fatalf("UploadArtifact() error = %v", err)
+	}
+	if av.Inline != "" {
+		t.Error("expected no Inline for content above threshold")
+	}
+	if av.Uri == "" {
+		t.Error("expected Uri when falling back to OCI upload")
+	}
+	if av.Ref == nil {
+		t.Error("expected Ref for OCI upload")
+	}
+	if av.Ref != nil && av.Ref.Backend != "oci" {
+		t.Errorf("expected backend=oci, got %q", av.Ref.Backend)
 	}
 }

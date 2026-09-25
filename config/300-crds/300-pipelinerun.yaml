@@ -2953,6 +2953,25 @@ spec:
                                                 type: string
                                             uri:
                                               type: string
+                                            inline:
+                                              description: Small content embedded directly in the status (base64-encoded).
+                                              type: string
+                                            size:
+                                              description: Content size in bytes.
+                                              type: integer
+                                              format: int64
+                                            ref:
+                                              description: Backend-specific storage reference.
+                                              type: object
+                                              properties:
+                                                backend:
+                                                  type: string
+                                                location:
+                                                  type: string
+                                                digest:
+                                                  type: string
+                                                contentType:
+                                                  type: string
                                 name:
                                   type: string
                                 outputs:
@@ -2980,6 +2999,25 @@ spec:
                                                 type: string
                                             uri:
                                               type: string
+                                            inline:
+                                              description: Small content embedded directly in the status (base64-encoded).
+                                              type: string
+                                            size:
+                                              description: Content size in bytes.
+                                              type: integer
+                                              format: int64
+                                            ref:
+                                              description: Backend-specific storage reference.
+                                              type: object
+                                              properties:
+                                                backend:
+                                                  type: string
+                                                location:
+                                                  type: string
+                                                digest:
+                                                  type: string
+                                                contentType:
+                                                  type: string
                                 provenance:
                                   description: Provenance
                                   type: object

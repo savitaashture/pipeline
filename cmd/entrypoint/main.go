@@ -64,6 +64,7 @@ var (
 	artifactOutputs            = flag.String("artifact_outputs", "", "JSON-encoded artifact outputs to upload after step execution")
 	artifactInsecure           = flag.Bool("artifact_insecure", false, "Use plain HTTP for artifact registry")
 	artifactDockerConfig       = flag.String("artifact_docker_config", "", "Docker config JSON for artifact registry authentication")
+	artifactInlineThreshold    = flag.Int("artifact_inline_threshold", 0, "Size for bytes below which artifact content is inlined in status instead of uploading to the registry (default: OCI)")
 )
 
 const (
@@ -159,6 +160,7 @@ func main() {
 		ResultExtractionMethod:     *resultExtractionMethod,
 		CompressTerminationMessage: *compressTerminationMessage,
 		ArtifactInsecure:           *artifactInsecure,
+		ArtifactInlineThreshold:    *artifactInlineThreshold,
 	}
 
 	if *artifactInputs != "" {

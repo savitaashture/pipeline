@@ -88,12 +88,12 @@ func TestResolveArtifactBinding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ResolveArtifactBinding(tt.from, tt.artifacts)
+			got, err := resolveArtifactBinding(tt.from, tt.artifacts)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ResolveArtifactBinding() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if !tt.wantErr && got != tt.wantURI {
-				t.Errorf("ResolveArtifactBinding() = %q, want %q", got, tt.wantURI)
+			if !tt.wantErr && got.Uri != tt.wantURI {
+				t.Errorf("ResolveArtifactBinding() Uri = %q, want %q", got.Uri, tt.wantURI)
 			}
 		})
 	}

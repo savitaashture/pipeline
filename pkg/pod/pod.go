@@ -243,11 +243,13 @@ func (b *Builder) Build(ctx context.Context, taskRun *v1.TaskRun, taskSpec v1.Ta
 	if featureFlags.EnableArtifacts && taskSpec.Artifacts != nil {
 		artifactStorageCfg := config.FromContextOrDefaults(ctx).ArtifactStorage
 		ociRepository, insecure := "", false
+		inlineThreshold := 0
 		if artifactStorageCfg != nil {
 			ociRepository = artifactStorageCfg.OCIRepository
 			insecure = artifactStorageCfg.Insecure
+			inlineThreshold = artifactStorageCfg.InlineThreshold
 		}
-		artifactArgs := artifactEntrypointArgs(&taskSpec, ociRepository, insecure)
+		artifactArgs := artifactEntrypointArgs(&taskSpec, ociRepository, insecure, inlineThreshold)
 		commonExtraEntrypointArgs = append(commonExtraEntrypointArgs, artifactArgs...)
 		// If the pipeline reconciler resolved artifact input URIs, inject them
 		if inputsJSON, ok := taskRun.Annotations["tekton.dev/artifact-inputs"]; ok && inputsJSON != "" {
