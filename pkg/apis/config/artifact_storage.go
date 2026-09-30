@@ -39,12 +39,25 @@ const (
 	ociGroupByPipelineRun   = "oci.groupByPipelineRun"
 
 	DefaultBackend         = "oci"
-	DefaultInlineThreshold = 1024
+	DefaultInlineThreshold = 512
 	DefaultTagPattern      = "{{namespace}}.{{taskrun}}.{{artifact}}"
 
-	// MaxInlineThreshold is the ceiling for inline-threshold (2KB),
-	// leaving headroom in the per-container termination message budget.
-	MaxInlineThreshold = 2048
+	// MaxInlineThreshold is the upper bound for the inline-threshold
+	// config value. CRI runtimes share the 4KB termination message
+	// budget with container metadata, leaving ~2KB for the actual
+	// message. At 1024 raw bytes the base64 encoding is 1368 bytes
+	// which, with JSON framing, fits safely within that limit.
+	MaxInlineThreshold = 1024
+
+	// PodInlineBudget is the maximum total raw bytes of inline artifact
+	// content across all steps in a Pod.
+	PodInlineBudget = 2048
+
+	// InlineBudgetFile is the well-known path where the entrypoint
+	// persists cumulative inline consumption across steps. This must
+	// be on a volume shared and writable by all step containers;
+	// /tekton/artifacts is an emptyDir mounted in every step.
+	InlineBudgetFile = "/tekton/artifacts/.inline-budget"
 )
 
 // ArtifactStorage holds configuration for OCI-based artifact storage.

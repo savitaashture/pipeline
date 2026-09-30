@@ -18,6 +18,7 @@ package entrypoint
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -58,7 +59,7 @@ func TestUploadAndDownloadArtifact(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	av, err := UploadArtifact(ctx, output, true, 0, remote.WithTransport(srv.Client().Transport))
+	av, err := UploadArtifact(ctx, output, true, 0, nil, remote.WithTransport(srv.Client().Transport))
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -125,7 +126,7 @@ func TestUploadArtifact_EmptyDir(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	av, err := UploadArtifact(ctx, output, true, 0, remote.WithTransport(srv.Client().Transport))
+	av, err := UploadArtifact(ctx, output, true, 0, nil, remote.WithTransport(srv.Client().Transport))
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -160,7 +161,7 @@ func TestUploadArtifact_ReferenceType(t *testing.T) {
 		Path: uriFile,
 	}
 
-	av, err := UploadArtifact(context.Background(), output, false, 0)
+	av, err := UploadArtifact(context.Background(), output, false, 0, nil)
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -186,7 +187,7 @@ func TestUploadArtifact_ReferenceType_NoDigest(t *testing.T) {
 		Path: uriFile,
 	}
 
-	if _, err := UploadArtifact(context.Background(), output, false, 0); err == nil {
+	if _, err := UploadArtifact(context.Background(), output, false, 0, nil); err == nil {
 		t.Fatal("expected error for reference artifact missing a digest")
 	}
 }
@@ -206,7 +207,7 @@ func TestUploadArtifact_ContentType_NoRepository_DigestOnly(t *testing.T) {
 		// Repository intentionally left empty.
 	}
 
-	av, err := UploadArtifact(context.Background(), output, false, 0)
+	av, err := UploadArtifact(context.Background(), output, false, 0, nil)
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -230,7 +231,7 @@ func TestUploadArtifact_InlineSmallContent(t *testing.T) {
 		Path: srcDir,
 	}
 
-	av, err := UploadArtifact(context.Background(), output, false, 4096)
+	av, err := UploadArtifact(context.Background(), output, false, 4096, nil)
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -264,7 +265,7 @@ func TestUploadArtifact_InlineExceedsThreshold_NoRepo_Error(t *testing.T) {
 		Path: srcDir,
 	}
 
-	_, err := UploadArtifact(context.Background(), output, false, 100)
+	_, err := UploadArtifact(context.Background(), output, false, 100, nil)
 	if err == nil {
 		t.Fatal("expected error when content exceeds inline threshold and no repo is configured")
 	}
@@ -291,7 +292,7 @@ func TestUploadArtifact_InlineExceedsThreshold_WithRepo_UploadsToOCI(t *testing.
 		Repository: fmt.Sprintf("%s/artifacts/big", registryHost),
 	}
 
-	av, err := UploadArtifact(context.Background(), output, true, 100, remote.WithTransport(srv.Client().Transport))
+	av, err := UploadArtifact(context.Background(), output, true, 100, nil, remote.WithTransport(srv.Client().Transport))
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -308,3 +309,95 @@ func TestUploadArtifact_InlineExceedsThreshold_WithRepo_UploadsToOCI(t *testing.
 		t.Errorf("expected backend=oci, got %q", av.Ref.Backend)
 	}
 }
+
+func TestUploadArtifact_InlineBudgetExhausted_FallsBackToOCI(t *testing.T) {
+	reg := registry.New()
+	srv := httptest.NewServer(reg)
+	defer srv.Close()
+	registryHost := strings.TrimPrefix(srv.URL, "http://")
+
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "small.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := ArtifactOutput{
+		Name:       "small",
+		Type:       "content",
+		Path:       srcDir,
+		Repository: fmt.Sprintf("%s/artifacts/small", registryHost),
+	}
+
+	budgetFile := filepath.Join(t.TempDir(), "budget")
+	budget := NewInlineBudgetTracker(budgetFile, 10) // very small budget
+
+	// First artifact consumes the budget
+	budget.TryConsume(10)
+
+	// Second artifact fits per-artifact threshold but budget is exhausted — should upload to OCI
+	av, err := UploadArtifact(context.Background(), output, true, 4096, budget, remote.WithTransport(srv.Client().Transport))
+	if err != nil {
+		t.Fatalf("UploadArtifact() error = %v", err)
+	}
+	if av.Inline != "" {
+		t.Error("expected no Inline when pod budget is exhausted")
+	}
+	if av.Uri == "" {
+		t.Error("expected Uri when falling back to OCI upload")
+	}
+}
+
+func TestUploadArtifact_InlineBudgetExhausted_NoRepo_Error(t *testing.T) {
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "small.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := ArtifactOutput{
+		Name: "small",
+		Type: "content",
+		Path: srcDir,
+		// No repository — no fallback
+	}
+
+	budgetFile := filepath.Join(t.TempDir(), "budget")
+	budget := NewInlineBudgetTracker(budgetFile, 10)
+	budget.TryConsume(10) // exhaust budget
+
+	_, err := UploadArtifact(context.Background(), output, false, 4096, budget)
+	if err == nil {
+		t.Fatal("expected error when budget is exhausted and no repo is configured")
+	}
+	var budgetErr *ErrInlineBudgetExceeded
+	if !errors.As(err, &budgetErr) {
+		t.Errorf("expected ErrInlineBudgetExceeded, got %T: %v", err, err)
+	}
+}
+
+func TestUploadArtifact_InlineBudgetAllowsInline(t *testing.T) {
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "small.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	output := ArtifactOutput{
+		Name: "small",
+		Type: "content",
+		Path: srcDir,
+	}
+
+	budgetFile := filepath.Join(t.TempDir(), "budget")
+	budget := NewInlineBudgetTracker(budgetFile, 2048) // plenty of budget
+
+	av, err := UploadArtifact(context.Background(), output, false, 4096, budget)
+	if err != nil {
+		t.Fatalf("UploadArtifact() error = %v", err)
+	}
+	if av.Inline == "" {
+		t.Fatal("expected Inline to be populated when budget allows")
+	}
+	if budget.Consumed() == 0 {
+		t.Error("expected budget to be consumed after inlining")
+	}
+}
+

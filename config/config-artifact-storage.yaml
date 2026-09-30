@@ -36,9 +36,17 @@ data:
     # Backend type (default: "oci").
     # backend: "oci"
 
-    # Artifacts smaller than this (in bytes) are stored inline in TaskRun
-    # status regardless of backend (default: "1024", ceiling: "2048").
-    # inline-threshold: "1024"
+    # Artifacts smaller than this (in bytes, tar.gz size) may be stored
+    # inline in the step termination message / TaskRun status instead of
+    # being uploaded to the backend (default: "512", ceiling: "1024").
+    #
+    # Inline content must also fit Kubernetes termination-message limits:
+    # 4KiB per container, and 12KiB per Pod divided equally across all
+    # containers (init + steps). A typical TaskRun pod (~6 containers)
+    # therefore has ≤2048 bytes per step. Tekton falls back to OCI when
+    # inlining would exceed a safe encoded message size, so raising this
+    # threshold does not guarantee inlining for larger artifacts.
+    # inline-threshold: "512"
 
     # --- OCI-specific configuration ---
 

@@ -36,6 +36,7 @@ import (
 	"cel.dev/cel-go/cel"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/tektoncd/pipeline/internal/artifactref"
+	"github.com/tektoncd/pipeline/pkg/apis/config"
 	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1/types"
 	"github.com/tektoncd/pipeline/pkg/entrypoint/pipeline"
 	"github.com/tektoncd/pipeline/pkg/internal/resultref"
@@ -292,6 +293,17 @@ func (e Entrypointer) Go() error {
 			}
 		}
 
+		// Snapshot pre-step file counts so we only upload artifacts this step wrote to.
+		// The artifact output directories are on a shared volume; previous steps'
+		// files are visible but should not be re-uploaded.
+		preStepFileCounts := make(map[string]int)
+		for _, ao := range e.ArtifactOutputs {
+			if ao.Type == "reference" {
+				continue
+			}
+			preStepFileCounts[ao.Name] = countFiles(ao.Path)
+		}
+
 		ctx, cancel = context.WithCancel(ctx)
 		if e.Timeout != nil && *e.Timeout > time.Duration(0) {
 			ctx, cancel = context.WithTimeout(ctx, *e.Timeout)
@@ -313,19 +325,30 @@ func (e Entrypointer) Go() error {
 			// Upload output artifacts after successful step execution
 			if err == nil {
 				// Use a fresh context for uploads — the step context may be cancelled by the cancellation watcher
+				var budget *InlineBudgetTracker
+				if e.ArtifactInlineThreshold > 0 {
+					budget = NewInlineBudgetTracker(config.InlineBudgetFile, config.PodInlineBudget)
+				}
 				uploadCtx := context.Background()
 				for _, ao := range e.ArtifactOutputs {
-					av, uploadErr := UploadArtifact(uploadCtx, ao, e.ArtifactInsecure, e.ArtifactInlineThreshold, e.ArtifactRemoteOpts...)
-					if uploadErr != nil {
-						slog.Error("Error uploading artifact", slog.String("name", ao.Name), slog.Any("error", uploadErr))
-					} else {
-						avJSON, _ := json.Marshal(av)
-						output = append(output, result.RunResult{
-							Key:        fmt.Sprintf("artifact-%s", ao.Name),
-							Value:      string(avJSON),
-							ResultType: result.StepArtifactsResultType,
-						})
+					if ao.Type != "reference" {
+						if countFiles(ao.Path) <= preStepFileCounts[ao.Name] {
+							continue
+						}
 					}
+					av, uploadErr := UploadArtifact(uploadCtx, ao, e.ArtifactInsecure, e.ArtifactInlineThreshold, budget, e.ArtifactRemoteOpts...)
+					if uploadErr != nil {
+						err = fmt.Errorf("uploading artifact %s: %w", ao.Name, uploadErr)
+						slog.Error("Error uploading artifact", slog.String("name", ao.Name), slog.Any("error", uploadErr))
+						output = append(output, e.outputRunResult(uploadErr.Error()))
+						break
+					}
+					avJSON, _ := json.Marshal(av)
+					output = append(output, result.RunResult{
+						Key:        fmt.Sprintf("artifact-%s", ao.Name),
+						Value:      string(avJSON),
+						ResultType: result.StepArtifactsResultType,
+					})
 				}
 			}
 		default:
@@ -945,6 +968,21 @@ func writeToTempFile(v string) (*os.File, error) {
 		return nil, err
 	}
 	return tmp, nil
+}
+
+// countFiles returns the number of regular files in dir (non-recursive).
+func countFiles(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			n++
+		}
+	}
+	return n
 }
 
 func replaceValue(regex *regexp.Regexp, src string, stepDir string, getValue func(string, string) (string, error)) (string, error) {

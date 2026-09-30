@@ -22,9 +22,11 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,12 +70,15 @@ type ArtifactOutput struct {
 // reference is digest-pinned.
 //
 // For "content" artifacts, this archives output.Path into a tar.gz buffer and
-// decides based on inlineThreshold whether to inline the content in the
-// termination message or push it to OCI:
-//   - size <= inlineThreshold (and threshold > 0): base64-encode and return inline
+// decides based on inlineThreshold and the pod-wide inline budget whether to
+// inline the content in the termination message or push it to OCI:
+//   - size <= inlineThreshold AND pod budget allows: base64-encode and return inline
+//   - size fits inlineThreshold but pod budget exhausted, with repository: push to OCI
 //   - size > inlineThreshold with repository: push to OCI
-//   - size > inlineThreshold without repository: error (no fallback)
-func UploadArtifact(ctx context.Context, output ArtifactOutput, insecure bool, inlineThreshold int, opts ...remote.Option) (*pipelinev1.ArtifactValue, error) {
+//   - size > inlineThreshold and pod budget exhausted without repository: error (no fallback)
+//
+// budget may be nil, in which case only the per-artifact threshold is checked.
+func UploadArtifact(ctx context.Context, output ArtifactOutput, insecure bool, inlineThreshold int, budget *InlineBudgetTracker, opts ...remote.Option) (*pipelinev1.ArtifactValue, error) {
 	if output.Type == pipelinev1.ArtifactTypeReference {
 		return readReferenceArtifact(output)
 	}
@@ -91,25 +96,35 @@ func UploadArtifact(ctx context.Context, output ArtifactOutput, insecure bool, i
 	h.Write(dataBytes)
 	digestHex := fmt.Sprintf("%x", h.Sum(nil))
 
-	// check data if it fits within the threshold
+	// Try to inline if the artifact fits the per-artifact threshold
 	if inlineThreshold > 0 && int(dataSize) <= inlineThreshold {
-		return &pipelinev1.ArtifactValue{
-			Digest: map[pipelinev1.Algorithm]string{"sha256": digestHex},
-			Size:   dataSize,
-			Inline: base64.StdEncoding.EncodeToString(dataBytes),
-		}, nil
+		canInline := budget == nil || budget.TryConsume(int(dataSize))
+		if canInline {
+			return &pipelinev1.ArtifactValue{
+				Digest: map[pipelinev1.Algorithm]string{"sha256": digestHex},
+				Size:   dataSize,
+				Inline: base64.StdEncoding.EncodeToString(dataBytes),
+			}, nil
+		}
+		// Pod budget exhausted — fall through to backend upload.
 	}
 
-	// No repository configured
+	// No repository configured — cannot fall back to backend upload.
 	if output.Repository == "" {
 		// TEP-0192 "disabled storage" default: content artifacts are still
 		// digested and recorded, just not uploaded, when no storage backend
 		// is configured.
 		if inlineThreshold > 0 {
+			if budget != nil && int(dataSize) <= inlineThreshold {
+				return nil, &ErrInlineBudgetExceeded{
+					ArtifactName: output.Name,
+					ArtifactSize: dataSize,
+					Remaining:    budget.Remaining(),
+				}
+			}
 			return nil, fmt.Errorf("artifact %q (%d bytes) exceeds inline threshold (%d) and no storage backend is configured",
 				output.Name, dataSize, inlineThreshold)
 		}
-		// "disabled storage" default is digest-only
 		return &pipelinev1.ArtifactValue{
 			Digest: map[pipelinev1.Algorithm]string{"sha256": digestHex},
 			Size:   dataSize,
@@ -149,6 +164,11 @@ func UploadArtifact(ctx context.Context, output ArtifactOutput, insecure bool, i
 	ref := repo.Digest(digest.String())
 
 	remoteOpts := append([]remote.Option{remote.WithContext(ctx)}, opts...)
+	if insecure {
+		remoteOpts = append(remoteOpts, remote.WithTransport(&http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // user opted in via insecure flag
+		}))
+	}
 	if err := remote.Write(ref, img, remoteOpts...); err != nil {
 		return nil, fmt.Errorf("pushing artifact to %s: %w", ref.String(), err)
 	}
@@ -213,6 +233,11 @@ func DownloadArtifact(ctx context.Context, input ArtifactInput, insecure bool, o
 	}
 
 	remoteOpts := append([]remote.Option{remote.WithContext(ctx)}, opts...)
+	if insecure {
+		remoteOpts = append(remoteOpts, remote.WithTransport(&http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // user opted in via insecure flag
+		}))
+	}
 	img, err := remote.Image(ref, remoteOpts...)
 	if err != nil {
 		return fmt.Errorf("pulling artifact from %s: %w", ref.String(), err)

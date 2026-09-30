@@ -17,6 +17,7 @@ limitations under the License.
 package entrypoint
 
 import (
+	"context"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -45,20 +46,21 @@ func TestEntrypointer_ArtifactOutputUpload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create output artifact content (simulating what the step produces)
+	// Create the output directory empty; the step runner writes the file so the
+	// entrypoint's pre-step snapshot sees a new artifact to upload.
 	outputDir := filepath.Join(tmpDir, "output-artifacts")
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(outputDir, "sbom.json"), []byte(`{"components":[]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
 	e := Entrypointer{
-		Command:         []string{"echo", "hello"},
-		PostFile:        filepath.Join(tmpDir, "postfile"),
-		Waiter:          &fakeWaiter{},
-		Runner:          &fakeRunner{},
+		Command:  []string{"echo", "hello"},
+		PostFile: filepath.Join(tmpDir, "postfile"),
+		Waiter:   &fakeWaiter{},
+		Runner: &writeFileRunner{
+			path:    filepath.Join(outputDir, "sbom.json"),
+			content: []byte(`{"components":[]}`),
+		},
 		PostWriter:      &fakePostWriter{},
 		TerminationPath: filepath.Join(tmpDir, "termination"),
 		StepMetadataDir: stepMetadataDir,
@@ -90,4 +92,14 @@ func TestEntrypointer_ArtifactOutputUpload(t *testing.T) {
 	if !strings.Contains(termStr, "artifacts/sbom@sha256:") {
 		t.Errorf("termination message should contain artifact URI, got: %s", termStr)
 	}
+}
+
+// writeFileRunner writes path during Run to simulate a step producing an artifact.
+type writeFileRunner struct {
+	path    string
+	content []byte
+}
+
+func (r *writeFileRunner) Run(ctx context.Context, args ...string) error {
+	return os.WriteFile(r.path, r.content, 0o644)
 }

@@ -123,11 +123,11 @@ func TestNewArtifactStorageFromMap(t *testing.T) {
 		{
 			name: "inline-threshold at ceiling is valid",
 			data: map[string]string{
-				"inline-threshold": "2048",
+				"inline-threshold": "1024",
 			},
 			want: &ArtifactStorage{
 				Backend:            DefaultBackend,
-				InlineThreshold:    2048,
+				InlineThreshold:    1024,
 				OCIAttachReferrers: true,
 				OCITagPattern:      DefaultTagPattern,
 			},
