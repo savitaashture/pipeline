@@ -162,6 +162,6 @@ func (s *Store) Load() *Config {
 		SpireConfig:            spireconfig.(*sc.SpireConfig).DeepCopy(),
 		Events:                 events.(*Events).DeepCopy(),
 		WaitExponentialBackoff: waitExponentialBackoff.(*WaitExponentialBackoff).DeepCopy(),
-		ArtifactStorage:        artifactStorage.(*ArtifactStorage),
+		ArtifactStorage:        artifactStorage.(*ArtifactStorage).DeepCopy(),
 	}
 }

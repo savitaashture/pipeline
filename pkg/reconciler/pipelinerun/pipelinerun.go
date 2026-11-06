@@ -981,10 +981,19 @@ func (c *Reconciler) reconcile(ctx context.Context, pr *v1.PipelineRun, getPipel
 	switch after.Status {
 	case corev1.ConditionTrue:
 		pr.Status.MarkSucceeded(after.Reason, after.Message)
-		// Attach OCI referrers for artifact outputs when pipeline succeeds
-		if cfg := config.FromContextOrDefaults(ctx); cfg.FeatureFlags.EnableArtifacts && cfg.ArtifactStorage.ReferrersEnabled() {
-			if err := c.attachArtifactReferrers(ctx, pr, pipelineRunFacts, cfg.ArtifactStorage); err != nil {
-				logger.Warnf("Failed to attach artifact referrers for PipelineRun %s: %v", pr.Name, err)
+		// Attach OCI referrers for artifact outputs when pipeline succeeds.
+		// Resolve the 4-level config hierarchy so the referrer attachment
+		// uses the correct repository, credentials, and flags.
+		if cfg := config.FromContextOrDefaults(ctx); cfg.FeatureFlags.EnableArtifacts && cfg.ArtifactStorage != nil {
+			resolvedStorage, resolveErr := c.resolveArtifactStorageForPipelineRun(ctx, cfg, pr)
+			if resolveErr != nil {
+				logger.Warnf("Failed to resolve artifact storage hierarchy for PipelineRun %s: %v", pr.Name, resolveErr)
+				resolvedStorage = cfg.ArtifactStorage
+			}
+			if resolvedStorage.ReferrersEnabled() {
+				if err := c.attachArtifactReferrers(ctx, pr, pipelineRunFacts, resolvedStorage); err != nil {
+					logger.Warnf("Failed to attach artifact referrers for PipelineRun %s: %v", pr.Name, err)
+				}
 			}
 		}
 	case corev1.ConditionFalse:
@@ -2314,6 +2323,22 @@ func validatePipelineSpecAfterApplyParameters(ctx context.Context, pipelineSpec 
 		errs = errs.Also(t.ValidateOnError(ctx))
 	}
 	return errs
+}
+
+// resolveArtifactStorageForPipelineRun resolves the 4-level artifact storage
+// config hierarchy using the PipelineRun's namespace and annotations.
+func (c *Reconciler) resolveArtifactStorageForPipelineRun(ctx context.Context, cfg *config.Config, pr *v1.PipelineRun) (*config.ArtifactStorage, error) {
+	var nsOverrides map[string]string
+	cm, err := c.KubeClientSet.CoreV1().ConfigMaps(pr.Namespace).Get(ctx, config.ArtifactStorageConfigName, metav1.GetOptions{})
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("reading namespace artifact storage config: %w", err)
+		}
+	} else {
+		nsOverrides = cm.Data
+	}
+
+	return config.ResolveArtifactStorage(cfg.ArtifactStorage, nsOverrides, pr.Annotations)
 }
 
 // attachArtifactReferrers collects artifact outputs from completed TaskRuns
