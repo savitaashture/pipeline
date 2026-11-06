@@ -20,18 +20,51 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/tektoncd/pipeline/pkg/apis/config"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"knative.dev/pkg/apis"
+	kubeclient "knative.dev/pkg/client/injection/kube/client"
 )
 
 // stepArtifactValuePattern matches $(steps.<step>.artifacts.<name>)
 var stepArtifactValuePattern = regexp.MustCompile(`^\$\(steps\.([^.]+)\.artifacts\.([^.)]+)\)$`)
 
-// validateArtifactStorageConfig rejects a misconfigured config-artifact-storage
-// where oci-repository is set but enabled is false. Checked at Task/Pipeline
-// admission when artifacts are used, so the ConfigMap can still be loaded.
+// resolveArtifactStorageForValidation resolves the 4-level artifact storage
+// hierarchy and returns a context with the resolved config. When a KubeClient
+// is available (webhook admission), it reads the namespace ConfigMap. The
+// annotations from the object (Pipeline/PipelineRun/TaskRun) are merged
+// as the highest-priority overrides.
+func resolveArtifactStorageForValidation(ctx context.Context, namespace string, annotations map[string]string) context.Context {
+	cfg := config.FromContextOrDefaults(ctx)
+	if cfg == nil || cfg.ArtifactStorage == nil {
+		return ctx
+	}
+
+	var nsOverrides map[string]string
+	if kc, ok := ctx.Value(kubeclient.Key{}).(kubernetes.Interface); ok && kc != nil && namespace != "" {
+		cm, err := kc.CoreV1().ConfigMaps(namespace).Get(ctx, config.ArtifactStorageConfigName, metav1.GetOptions{})
+		if err == nil {
+			nsOverrides = cm.Data
+		}
+	}
+
+	resolved, err := config.ResolveArtifactStorage(cfg.ArtifactStorage, nsOverrides, annotations)
+	if err != nil {
+		return ctx
+	}
+
+	cfgCopy := *cfg
+	cfgCopy.ArtifactStorage = resolved
+	return config.ToContext(ctx, &cfgCopy)
+}
+
+// validateArtifactStorageConfig checks the artifact storage configuration from
+// the context. The caller is expected to have resolved the 4-level hierarchy
+// before calling this function.
 func validateArtifactStorageConfig(ctx context.Context) *apis.FieldError {
 	cfg := config.FromContextOrDefaults(ctx)
 	if cfg == nil || cfg.ArtifactStorage == nil {
@@ -42,6 +75,64 @@ func validateArtifactStorageConfig(ctx context.Context) *apis.FieldError {
 		return apis.ErrGeneric(fmt.Sprintf("artifact storage config is invalid: oci-repository is set to %q but enabled is false; set enabled to true to activate artifact storage", as.OCIRepository), "")
 	}
 	return nil
+}
+
+// ValidateArtifactStorageAnnotations validates the tekton.dev/artifact-storage-*
+// annotations on any object (PipelineRun, Pipeline, TaskRun). Invalid values
+// are rejected at admission time rather than causing runtime errors.
+func ValidateArtifactStorageAnnotations(annotations map[string]string) *apis.FieldError {
+	if len(annotations) == 0 {
+		return nil
+	}
+
+	var errs *apis.FieldError
+
+	if v, ok := annotations[config.ArtifactStorageEnabledAnnotation]; ok {
+		if _, err := strconv.ParseBool(v); err != nil {
+			errs = errs.Also(apis.ErrInvalidValue(
+				fmt.Sprintf("invalid boolean %q", v),
+				"metadata.annotations["+config.ArtifactStorageEnabledAnnotation+"]"))
+		}
+	}
+
+	if v, ok := annotations[config.ArtifactStorageInlineThresholdAnnotation]; ok {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			errs = errs.Also(apis.ErrInvalidValue(
+				fmt.Sprintf("invalid integer %q", v),
+				"metadata.annotations["+config.ArtifactStorageInlineThresholdAnnotation+"]"))
+		} else if n < 0 || n > config.MaxInlineThreshold {
+			errs = errs.Also(apis.ErrInvalidValue(
+				fmt.Sprintf("must be 0..%d, got %d", config.MaxInlineThreshold, n),
+				"metadata.annotations["+config.ArtifactStorageInlineThresholdAnnotation+"]"))
+		}
+	}
+
+	if v, ok := annotations[config.ArtifactStorageInsecureAnnotation]; ok {
+		if _, err := strconv.ParseBool(v); err != nil {
+			errs = errs.Also(apis.ErrInvalidValue(
+				fmt.Sprintf("invalid boolean %q", v),
+				"metadata.annotations["+config.ArtifactStorageInsecureAnnotation+"]"))
+		}
+	}
+
+	if v, ok := annotations[config.ArtifactStorageOCIAttachReferrersAnnotation]; ok {
+		if _, err := strconv.ParseBool(v); err != nil {
+			errs = errs.Also(apis.ErrInvalidValue(
+				fmt.Sprintf("invalid boolean %q", v),
+				"metadata.annotations["+config.ArtifactStorageOCIAttachReferrersAnnotation+"]"))
+		}
+	}
+
+	if v, ok := annotations[config.ArtifactStorageOCIGroupByPipelineRunAnnotation]; ok {
+		if _, err := strconv.ParseBool(v); err != nil {
+			errs = errs.Also(apis.ErrInvalidValue(
+				fmt.Sprintf("invalid boolean %q", v),
+				"metadata.annotations["+config.ArtifactStorageOCIGroupByPipelineRunAnnotation+"]"))
+		}
+	}
+
+	return errs
 }
 
 // ValidateArtifactDeclarations validates artifact declarations on a TaskSpec.
