@@ -32,6 +32,7 @@ import (
 
 	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"github.com/tektoncd/pipeline/pkg/artifactstorage"
+	"github.com/tektoncd/pipeline/pkg/entrypoint/pipeline"
 )
 
 // ArtifactInput describes an artifact to download before step execution.
@@ -181,6 +182,13 @@ func readReferenceArtifact(output ArtifactOutput) (*pipelinev1.ArtifactValue, er
 // Digest verification is handled by the Provider layer (via VerifiedFetch for
 // non-content-addressed backends, or inherently by the transport for
 // content-addressed backends like OCI).
+// artifactsFetched returns true if the artifact-fetch init container has
+// already downloaded all content input artifacts (indicated by its marker file).
+func artifactsFetched() bool {
+	_, err := os.Stat(pipeline.ArtifactsFetchedFile)
+	return err == nil
+}
+
 func DownloadArtifact(ctx context.Context, input ArtifactInput, provider artifactstorage.Provider) error {
 	if input.Inline != "" {
 		return verifyAndExtractInlineArtifact(input)
