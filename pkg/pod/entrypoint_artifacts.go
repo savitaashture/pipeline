@@ -108,3 +108,18 @@ func artifactEntrypointArgs(taskSpec *v1.TaskSpec, backend string, ociRepository
 
 	return args
 }
+
+// stripArtifactInputArgs removes -artifact_inputs and its value from args.
+// This is used when an init container handles input fetching so steps don't
+// attempt redundant downloads with placeholder (empty-URI) input declarations.
+func stripArtifactInputArgs(args []string) []string {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-artifact_inputs" {
+			i++ // skip the next arg (the JSON value)
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return out
+}
