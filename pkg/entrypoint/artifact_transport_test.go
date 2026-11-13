@@ -535,6 +535,282 @@ func TestDownloadArtifact_Inline_DigestVerification(t *testing.T) {
 	})
 }
 
+func TestCreateTarGzBuffer_WithSymlinks(t *testing.T) {
+	srcDir := t.TempDir()
+
+	// Create a regular file
+	if err := os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a subdirectory with a file
+	subDir := filepath.Join(srcDir, "subdir")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subDir, "nested.txt"), []byte("nested"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a symlink to a file
+	if err := os.Symlink("file.txt", filepath.Join(srcDir, "link-to-file")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a symlink to a directory (this was the bug — .agents/skills -> ../skills)
+	if err := os.Symlink("subdir", filepath.Join(srcDir, "link-to-dir")); err != nil {
+		t.Fatal(err)
+	}
+
+	buf, err := createTarGzBuffer(srcDir)
+	if err != nil {
+		t.Fatalf("createTarGzBuffer() error = %v", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("expected non-empty buffer")
+	}
+
+	// Extract and verify symlinks are preserved
+	dstDir := t.TempDir()
+	if err := extractTarGz(buf, dstDir); err != nil {
+		t.Fatalf("extractTarGz() error = %v", err)
+	}
+
+	// Verify regular file
+	content, err := os.ReadFile(filepath.Join(dstDir, "file.txt"))
+	if err != nil {
+		t.Fatalf("failed to read file.txt: %v", err)
+	}
+	if string(content) != "content" {
+		t.Errorf("file.txt content = %q, want %q", string(content), "content")
+	}
+
+	// Verify nested file
+	nested, err := os.ReadFile(filepath.Join(dstDir, "subdir", "nested.txt"))
+	if err != nil {
+		t.Fatalf("failed to read subdir/nested.txt: %v", err)
+	}
+	if string(nested) != "nested" {
+		t.Errorf("nested.txt content = %q, want %q", string(nested), "nested")
+	}
+
+	// Verify symlink to file
+	linkTarget, err := os.Readlink(filepath.Join(dstDir, "link-to-file"))
+	if err != nil {
+		t.Fatalf("failed to readlink link-to-file: %v", err)
+	}
+	if linkTarget != "file.txt" {
+		t.Errorf("link-to-file target = %q, want %q", linkTarget, "file.txt")
+	}
+	linkedContent, err := os.ReadFile(filepath.Join(dstDir, "link-to-file"))
+	if err != nil {
+		t.Fatalf("failed to read through link-to-file: %v", err)
+	}
+	if string(linkedContent) != "content" {
+		t.Errorf("link-to-file content = %q, want %q", string(linkedContent), "content")
+	}
+
+	// Verify symlink to directory
+	linkTarget, err = os.Readlink(filepath.Join(dstDir, "link-to-dir"))
+	if err != nil {
+		t.Fatalf("failed to readlink link-to-dir: %v", err)
+	}
+	if linkTarget != "subdir" {
+		t.Errorf("link-to-dir target = %q, want %q", linkTarget, "subdir")
+	}
+	nestedViaLink, err := os.ReadFile(filepath.Join(dstDir, "link-to-dir", "nested.txt"))
+	if err != nil {
+		t.Fatalf("failed to read through link-to-dir/nested.txt: %v", err)
+	}
+	if string(nestedViaLink) != "nested" {
+		t.Errorf("link-to-dir/nested.txt content = %q, want %q", string(nestedViaLink), "nested")
+	}
+}
+
+func TestCreateTarGzBuffer_NestedSymlinks(t *testing.T) {
+	// Reproduce the exact layout that caused the tektoncd/pipeline clone failure:
+	// .agents/skills -> ../skills (symlink to a directory)
+	srcDir := t.TempDir()
+
+	skillsDir := filepath.Join(srcDir, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), []byte("# Skill"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	agentsDir := filepath.Join(srcDir, ".agents")
+	if err := os.MkdirAll(agentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../skills", filepath.Join(agentsDir, "skills")); err != nil {
+		t.Fatal(err)
+	}
+
+	buf, err := createTarGzBuffer(srcDir)
+	if err != nil {
+		t.Fatalf("createTarGzBuffer() should not fail with symlinks to directories, got: %v", err)
+	}
+
+	dstDir := t.TempDir()
+	if err := extractTarGz(buf, dstDir); err != nil {
+		t.Fatalf("extractTarGz() error = %v", err)
+	}
+
+	// Verify the symlink was preserved
+	linkTarget, err := os.Readlink(filepath.Join(dstDir, ".agents", "skills"))
+	if err != nil {
+		t.Fatalf("failed to readlink .agents/skills: %v", err)
+	}
+	if linkTarget != "../skills" {
+		t.Errorf(".agents/skills target = %q, want %q", linkTarget, "../skills")
+	}
+
+	// Verify the actual directory content is accessible through the symlink
+	content, err := os.ReadFile(filepath.Join(dstDir, ".agents", "skills", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("failed to read through symlink: %v", err)
+	}
+	if string(content) != "# Skill" {
+		t.Errorf("SKILL.md content = %q, want %q", string(content), "# Skill")
+	}
+}
+
+func TestUploadAndDownloadArtifact_WithSymlinks(t *testing.T) {
+	reg := registry.New()
+	srv := httptest.NewServer(reg)
+	defer srv.Close()
+
+	registryHost := strings.TrimPrefix(srv.URL, "http://")
+	provider := testOCIProvider(srv)
+
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "main.go"), []byte("package main"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(srcDir, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "pkg", "lib.go"), []byte("package pkg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Symlink to directory
+	if err := os.Symlink("pkg", filepath.Join(srcDir, "link-pkg")); err != nil {
+		t.Fatal(err)
+	}
+	// Symlink to file
+	if err := os.Symlink("main.go", filepath.Join(srcDir, "link-main")); err != nil {
+		t.Fatal(err)
+	}
+
+	output := ArtifactOutput{
+		Name:       "source-with-symlinks",
+		Path:       srcDir,
+		Repository: fmt.Sprintf("%s/artifacts/source-symlinks", registryHost),
+	}
+
+	ctx := context.Background()
+	av, err := UploadArtifact(ctx, output, provider, 0, nil)
+	if err != nil {
+		t.Fatalf("UploadArtifact() error = %v", err)
+	}
+
+	dstDir := t.TempDir()
+	input := ArtifactInput{
+		Name: "source-with-symlinks",
+		URI:  av.Uri,
+		Path: dstDir,
+	}
+
+	if err := DownloadArtifact(ctx, input, provider); err != nil {
+		t.Fatalf("DownloadArtifact() error = %v", err)
+	}
+
+	// Verify regular file
+	content, err := os.ReadFile(filepath.Join(dstDir, "main.go"))
+	if err != nil {
+		t.Fatalf("failed to read main.go: %v", err)
+	}
+	if string(content) != "package main" {
+		t.Errorf("main.go content = %q, want %q", string(content), "package main")
+	}
+
+	// Verify symlink to file is preserved
+	linkTarget, err := os.Readlink(filepath.Join(dstDir, "link-main"))
+	if err != nil {
+		t.Fatalf("failed to readlink link-main: %v", err)
+	}
+	if linkTarget != "main.go" {
+		t.Errorf("link-main target = %q, want %q", linkTarget, "main.go")
+	}
+
+	// Verify symlink to directory is preserved and content accessible
+	linkTarget, err = os.Readlink(filepath.Join(dstDir, "link-pkg"))
+	if err != nil {
+		t.Fatalf("failed to readlink link-pkg: %v", err)
+	}
+	if linkTarget != "pkg" {
+		t.Errorf("link-pkg target = %q, want %q", linkTarget, "pkg")
+	}
+	libContent, err := os.ReadFile(filepath.Join(dstDir, "link-pkg", "lib.go"))
+	if err != nil {
+		t.Fatalf("failed to read through link-pkg/lib.go: %v", err)
+	}
+	if string(libContent) != "package pkg" {
+		t.Errorf("lib.go content = %q, want %q", string(libContent), "package pkg")
+	}
+}
+
+func TestExtractTarGz_RejectsAbsoluteSymlink(t *testing.T) {
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "safe.txt"), []byte("safe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc/passwd", filepath.Join(srcDir, "escape")); err != nil {
+		t.Fatal(err)
+	}
+
+	buf, err := createTarGzBuffer(srcDir)
+	if err != nil {
+		t.Fatalf("createTarGzBuffer() error = %v", err)
+	}
+
+	dstDir := t.TempDir()
+	err = extractTarGz(buf, dstDir)
+	if err == nil {
+		t.Fatal("expected error for absolute symlink target")
+	}
+	if !strings.Contains(err.Error(), "invalid symlink target") {
+		t.Errorf("expected 'invalid symlink target' error, got: %v", err)
+	}
+}
+
+func TestExtractTarGz_RejectsRelativeSymlinkEscape(t *testing.T) {
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "safe.txt"), []byte("safe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// ../../etc/passwd escapes the archive root
+	if err := os.Symlink("../../etc/passwd", filepath.Join(srcDir, "escape")); err != nil {
+		t.Fatal(err)
+	}
+
+	buf, err := createTarGzBuffer(srcDir)
+	if err != nil {
+		t.Fatalf("createTarGzBuffer() error = %v", err)
+	}
+
+	dstDir := t.TempDir()
+	err = extractTarGz(buf, dstDir)
+	if err == nil {
+		t.Fatal("expected error for relative symlink escaping destination")
+	}
+	if !strings.Contains(err.Error(), "invalid symlink target") {
+		t.Errorf("expected 'invalid symlink target' error, got: %v", err)
+	}
+}
+
 func TestVerifyDigest(t *testing.T) {
 	data := []byte("test data for digest verification")
 	h := sha256.New()
