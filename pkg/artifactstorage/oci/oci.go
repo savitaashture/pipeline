@@ -17,22 +17,22 @@ limitations under the License.
 package oci
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+	"github.com/google/go-containerregistry/pkg/v1/static"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	v1types "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1/types"
@@ -120,10 +120,7 @@ func (p *OCIProvider) Store(ctx context.Context, opts artifactstorage.StoreOptio
 		layerMediaType = types.OCILayer
 	}
 
-	layer, err := tarball.LayerFromReader(bytes.NewReader(data), tarball.WithMediaType(layerMediaType))
-	if err != nil {
-		return nil, fmt.Errorf("creating layer: %w", err)
-	}
+	layer := static.NewLayer(data, layerMediaType)
 
 	img, err := mutate.AppendLayers(mutate.MediaType(empty.Image, types.OCIManifestSchema1), layer)
 	if err != nil {
@@ -205,14 +202,24 @@ func (p *OCIProvider) Exists(ctx context.Context, ref *v1types.ArtifactStorageRe
 	return true, nil
 }
 
-// layerReadCloser returns a ReadCloser for the compressed layer content.
 func layerReadCloser(layer v1.Layer) (io.ReadCloser, error) {
 	return layer.Compressed()
 }
 
-// isNotFound checks if the error indicates a 404 / not-found response.
+// isNotFound checks if the error indicates a 404 / not-found response
+// by inspecting the structured transport.Error from go-containerregistry.
 func isNotFound(err error) bool {
-	return strings.Contains(err.Error(), "NOT_FOUND") ||
-		strings.Contains(err.Error(), "MANIFEST_UNKNOWN") ||
-		strings.Contains(err.Error(), "404")
+	var terr *transport.Error
+	if !errors.As(err, &terr) {
+		return false
+	}
+	if terr.StatusCode == http.StatusNotFound {
+		return true
+	}
+	for _, d := range terr.Errors {
+		if d.Code == transport.ManifestUnknownErrorCode || d.Code == transport.NameUnknownErrorCode {
+			return true
+		}
+	}
+	return false
 }
