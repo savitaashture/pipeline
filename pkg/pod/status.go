@@ -25,7 +25,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tektoncd/pipeline/internal/sidecarlogresults"
 	"github.com/tektoncd/pipeline/pkg/apis/config"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline"
 	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -197,33 +196,6 @@ func setTaskRunArtifactsFromRunResult(runResults []result.RunResult, artifacts *
 	return nil
 }
 
-func getTaskResultsFromSidecarLogs(runResults []result.RunResult) []result.RunResult {
-	taskResultsFromSidecarLogs := []result.RunResult{}
-	for _, slr := range runResults {
-		if slr.ResultType == result.TaskRunResultType {
-			taskResultsFromSidecarLogs = append(taskResultsFromSidecarLogs, slr)
-		}
-	}
-	return taskResultsFromSidecarLogs
-}
-
-func getStepResultsFromSidecarLogs(sidecarLogResults []result.RunResult, containerName string) ([]result.RunResult, error) {
-	stepResultsFromSidecarLogs := []result.RunResult{}
-	for _, slr := range sidecarLogResults {
-		if slr.ResultType == result.StepResultType {
-			stepName, resultName, err := sidecarlogresults.ExtractStepAndResultFromSidecarResultName(slr.Key)
-			if err != nil {
-				return []result.RunResult{}, err
-			}
-			if stepName == containerName {
-				slr.Key = resultName
-				stepResultsFromSidecarLogs = append(stepResultsFromSidecarLogs, slr)
-			}
-		}
-	}
-	return stepResultsFromSidecarLogs, nil
-}
-
 func setTaskRunStatusBasedOnStepStatus(ctx context.Context, logger *zap.SugaredLogger, stepStatuses []corev1.ContainerStatus, tr *v1.TaskRun, podPhase corev1.PodPhase, kubeclient kubernetes.Interface, ts *v1.TaskSpec) error {
 	trs := &tr.Status
 	var errs []error
@@ -246,7 +218,7 @@ func setTaskRunStatusBasedOnStepStatus(ctx context.Context, logger *zap.SugaredL
 	if sidecarLogsResultsEnabled {
 		// extraction of results from sidecar logs
 		if tr.Status.TaskSpec.Results != nil || artifactsSidecarCreated {
-			slr, err := sidecarlogresults.GetResultsFromSidecarLogs(ctx, kubeclient, tr.Namespace, tr.Status.PodName, pipeline.ReservedResultsSidecarContainerName, podPhase)
+			slr, err := getResultsFromSidecarLogs(ctx, kubeclient, tr.Namespace, tr.Status.PodName, pipeline.ReservedResultsSidecarContainerName, podPhase)
 			if err != nil {
 				errs = append(errs, err)
 			}
