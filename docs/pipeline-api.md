@@ -300,6 +300,7 @@ associated with it.
 
 _Appears in:_
 - [Artifacts](#artifacts)
+- [PipelineRunArtifacts](#pipelinerunartifacts)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -318,6 +319,7 @@ ArtifactDeclaration describes a single artifact input or output.
 
 _Appears in:_
 - [ArtifactDeclarations](#artifactdeclarations)
+- [PipelineArtifactDeclarations](#pipelineartifactdeclarations)
 - [StepArtifacts](#stepartifacts)
 
 | Field | Description | Default | Validation |
@@ -678,6 +680,41 @@ of tasks feed into inputs of subsequent tasks.
 | `spec` _[PipelineSpec](#pipelinespec)_ | Spec holds the desired state of the Pipeline from the client |  | Optional: \{\} <br /> |
 
 
+#### PipelineArtifactDeclarations
+
+
+
+PipelineArtifactDeclarations declares artifacts at the Pipeline boundary.
+
+
+
+_Appears in:_
+- [PipelineSpec](#pipelinespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `inputs` _[ArtifactDeclaration](#artifactdeclaration) array_ |  |  |  |
+| `outputs` _[PipelineArtifactOutput](#pipelineartifactoutput) array_ |  |  |  |
+
+
+#### PipelineArtifactOutput
+
+
+
+PipelineArtifactOutput exposes a Task artifact as a Pipeline
+
+
+
+_Appears in:_
+- [PipelineArtifactDeclarations](#pipelineartifactdeclarations)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name of the artifact output. Must be unique within Pipeline outputs. |  |  |
+| `description` _string_ | Description of the artifact. |  | Optional: \{\} <br /> |
+| `from` _string_ | From references the producing Task's output:<br />"tasks.<taskName>.outputs.<artifactName>" |  |  |
+
+
 #### PipelineRef
 
 
@@ -733,6 +770,26 @@ PipelineRun creates TaskRuns for Tasks in the referenced Pipeline.
 | `status` _[PipelineRunStatus](#pipelinerunstatus)_ |  |  | Optional: \{\} <br /> |
 
 
+#### PipelineRunArtifacts
+
+
+
+PipelineRunArtifacts holds artifact inputs provided at PipelineRun creation
+and artifact outputs populated at PipelineRun completion.
+
+
+
+_Appears in:_
+- [PipelineRunSpec](#pipelinerunspec)
+- [PipelineRunStatus](#pipelinerunstatus)
+- [PipelineRunStatusFields](#pipelinerunstatusfields)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `inputs` _[Artifact](#artifact) array_ | Inputs provides artifact values to satisfy Pipeline.spec.artifacts.inputs.<br />Each input MUST match a name declared in the Pipeline. |  |  |
+| `outputs` _[Artifact](#artifact) array_ | Outputs holds artifact values resolved from child TaskRuns at<br />PipelineRun completion. This field is read-only and populated by<br />the controller. |  |  |
+
+
 
 
 #### PipelineRunResult
@@ -776,6 +833,7 @@ _Appears in:_
 | `taskRunTemplate` _[PipelineTaskRunTemplate](#pipelinetaskruntemplate)_ | TaskRunTemplate represent template of taskrun |  | Optional: \{\} <br /> |
 | `workspaces` _[WorkspaceBinding](#workspacebinding) array_ | Workspaces holds a set of workspace bindings that must match names<br />with those declared in the pipeline. |  | Optional: \{\} <br /> |
 | `taskRunSpecs` _[PipelineTaskRunSpec](#pipelinetaskrunspec) array_ | TaskRunSpecs holds a set of runtime specs |  | Optional: \{\} <br /> |
+| `artifacts` _[PipelineRunArtifacts](#pipelinerunartifacts)_ | Artifacts provides artifact inputs for the Pipeline at run time.<br />Each input MUST match a name declared in Pipeline.spec.artifacts.inputs. |  | Optional: \{\} <br /> |
 | `managedBy` _string_ | ManagedBy indicates which controller is responsible for reconciling<br />this resource. If unset or set to "tekton.dev/pipeline", the default<br />Tekton controller will manage this resource.<br />This field is immutable. |  | Optional: \{\} <br /> |
 
 
@@ -816,6 +874,7 @@ _Appears in:_
 | `childReferences` _[ChildStatusReference](#childstatusreference) array_ | list of TaskRun and Run names, PipelineTask names, and API versions/kinds for children of this PipelineRun. |  | Optional: \{\} <br /> |
 | `finallyStartTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#time-v1-meta)_ | FinallyStartTime is when all non-finally tasks have been completed and only finally tasks are being executed. |  | Optional: \{\} <br /> |
 | `provenance` _[Provenance](#provenance)_ | Provenance contains some key authenticated metadata about how a software artifact was built (what sources, what inputs/outputs, etc.). |  | Optional: \{\} <br /> |
+| `artifacts` _[PipelineRunArtifacts](#pipelinerunartifacts)_ | Artifacts holds pipeline-level artifact outputs resolved from child<br />TaskRuns. Populated once when the PipelineRun completes (including<br />finally tasks). |  | Optional: \{\} <br /> |
 | `spanContext` _object (keys:string, values:string)_ | SpanContext contains tracing span context fields |  |  |
 
 
@@ -842,6 +901,7 @@ _Appears in:_
 | `childReferences` _[ChildStatusReference](#childstatusreference) array_ | list of TaskRun and Run names, PipelineTask names, and API versions/kinds for children of this PipelineRun. |  | Optional: \{\} <br /> |
 | `finallyStartTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#time-v1-meta)_ | FinallyStartTime is when all non-finally tasks have been completed and only finally tasks are being executed. |  | Optional: \{\} <br /> |
 | `provenance` _[Provenance](#provenance)_ | Provenance contains some key authenticated metadata about how a software artifact was built (what sources, what inputs/outputs, etc.). |  | Optional: \{\} <br /> |
+| `artifacts` _[PipelineRunArtifacts](#pipelinerunartifacts)_ | Artifacts holds pipeline-level artifact outputs resolved from child<br />TaskRuns. Populated once when the PipelineRun completes (including<br />finally tasks). |  | Optional: \{\} <br /> |
 | `spanContext` _object (keys:string, values:string)_ | SpanContext contains tracing span context fields |  |  |
 
 
@@ -870,6 +930,7 @@ _Appears in:_
 | `params` _[ParamSpecs](#paramspecs)_ | Params declares a list of input parameters that must be supplied when<br />this Pipeline is run. |  |  |
 | `workspaces` _[PipelineWorkspaceDeclaration](#pipelineworkspacedeclaration) array_ | Workspaces declares a set of named workspaces that are expected to be<br />provided by a PipelineRun. |  | Optional: \{\} <br /> |
 | `results` _[PipelineResult](#pipelineresult) array_ | Results are values that this pipeline can output once run |  | Optional: \{\} <br /> |
+| `artifacts` _[PipelineArtifactDeclarations](#pipelineartifactdeclarations)_ | Artifacts declares artifacts entering and leaving the Pipeline. |  | Optional: \{\} <br /> |
 | `finally` _[PipelineTask](#pipelinetask) array_ | Finally declares the list of Tasks that execute just before leaving the Pipeline<br />i.e. either after all Tasks are finished executing successfully<br />or after a failure which would result in ending the Pipeline |  |  |
 
 

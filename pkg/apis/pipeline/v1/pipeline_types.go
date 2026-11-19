@@ -39,6 +39,8 @@ const (
 	PipelineTasks = "tasks"
 	// PipelineFinallyTasks is a value representing a task is a member of "finally" section of the pipeline
 	PipelineFinallyTasks = "finally"
+	// PipelineTaskOutputs is the name used in artifact binding references (e.g. tasks.<name>.outputs.<artifact>).
+	PipelineTaskOutputs = "outputs"
 	// PipelineTaskStopAndFail indicates to stop and fail the PipelineRun if the PipelineTask fails
 	PipelineTaskStopAndFail PipelineTaskOnErrorType = "stopAndFail"
 	// PipelineTaskContinue indicates to continue executing the rest of the DAG when the PipelineTask fails
@@ -128,6 +130,9 @@ type PipelineSpec struct {
 	// +optional
 	// +listType=atomic
 	Results []PipelineResult `json:"results,omitempty"`
+	// Artifacts declares artifacts entering and leaving the Pipeline.
+	// +optional
+	Artifacts *PipelineArtifactDeclarations `json:"artifacts,omitempty"`
 	// Finally declares the list of Tasks that execute just before leaving the Pipeline
 	// i.e. either after all Tasks are finished executing successfully
 	// or after a failure which would result in ending the Pipeline

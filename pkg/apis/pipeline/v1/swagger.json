@@ -573,6 +573,50 @@
         }
       }
     },
+    "v1.PipelineArtifactDeclarations": {
+      "description": "PipelineArtifactDeclarations declares artifacts at the Pipeline boundary.",
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/v1.ArtifactDeclaration"
+          },
+          "x-kubernetes-list-type": "atomic"
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/v1.PipelineArtifactOutput"
+          },
+          "x-kubernetes-list-type": "atomic"
+        }
+      }
+    },
+    "v1.PipelineArtifactOutput": {
+      "description": "PipelineArtifactOutput exposes a Task artifact as a Pipeline",
+      "type": "object",
+      "required": [
+        "name",
+        "from"
+      ],
+      "properties": {
+        "description": {
+          "description": "Description of the artifact.",
+          "type": "string"
+        },
+        "from": {
+          "description": "From references the producing Task's output: \"tasks.\u003ctaskName\u003e.outputs.\u003cartifactName\u003e\"",
+          "type": "string",
+          "default": ""
+        },
+        "name": {
+          "description": "Name of the artifact output. Must be unique within Pipeline outputs.",
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
     "v1.PipelineList": {
       "description": "PipelineList contains a list of Pipeline",
       "type": "object",
@@ -679,6 +723,28 @@
         }
       }
     },
+    "v1.PipelineRunArtifacts": {
+      "description": "PipelineRunArtifacts holds artifact inputs provided at PipelineRun creation and artifact outputs populated at PipelineRun completion.",
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "description": "Inputs provides artifact values to satisfy Pipeline.spec.artifacts.inputs. Each input MUST match a name declared in the Pipeline.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/v1.Artifact"
+          },
+          "x-kubernetes-list-type": "atomic"
+        },
+        "outputs": {
+          "description": "Outputs holds artifact values resolved from child TaskRuns at PipelineRun completion. This field is read-only and populated by the controller.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/v1.Artifact"
+          },
+          "x-kubernetes-list-type": "atomic"
+        }
+      }
+    },
     "v1.PipelineRunList": {
       "description": "PipelineRunList contains a list of PipelineRun",
       "type": "object",
@@ -751,6 +817,10 @@
       "description": "PipelineRunSpec defines the desired state of PipelineRun",
       "type": "object",
       "properties": {
+        "artifacts": {
+          "description": "Artifacts provides artifact inputs for the Pipeline at run time. Each input MUST match a name declared in Pipeline.spec.artifacts.inputs.",
+          "$ref": "#/definitions/v1.PipelineRunArtifacts"
+        },
         "managedBy": {
           "description": "ManagedBy indicates which controller is responsible for reconciling this resource. If unset or set to \"tekton.dev/pipeline\", the default Tekton controller will manage this resource. This field is immutable.",
           "type": "string"
@@ -810,6 +880,10 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "artifacts": {
+          "description": "Artifacts holds pipeline-level artifact outputs resolved from child TaskRuns. Populated once when the PipelineRun completes (including finally tasks).",
+          "$ref": "#/definitions/v1.PipelineRunArtifacts"
         },
         "childReferences": {
           "description": "list of TaskRun and Run names, PipelineTask names, and API versions/kinds for children of this PipelineRun.",
@@ -882,6 +956,10 @@
       "description": "PipelineRunStatusFields holds the fields of PipelineRunStatus' status. This is defined separately and inlined so that other types can readily consume these fields via duck typing.",
       "type": "object",
       "properties": {
+        "artifacts": {
+          "description": "Artifacts holds pipeline-level artifact outputs resolved from child TaskRuns. Populated once when the PipelineRun completes (including finally tasks).",
+          "$ref": "#/definitions/v1.PipelineRunArtifacts"
+        },
         "childReferences": {
           "description": "list of TaskRun and Run names, PipelineTask names, and API versions/kinds for children of this PipelineRun.",
           "type": "array",
@@ -961,6 +1039,10 @@
       "description": "PipelineSpec defines the desired state of Pipeline.",
       "type": "object",
       "properties": {
+        "artifacts": {
+          "description": "Artifacts declares artifacts entering and leaving the Pipeline.",
+          "$ref": "#/definitions/v1.PipelineArtifactDeclarations"
+        },
         "description": {
           "description": "Description is a user-facing description of the pipeline that may be used to populate a UI.",
           "type": "string"

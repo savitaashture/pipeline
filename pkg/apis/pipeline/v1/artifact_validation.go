@@ -25,6 +25,7 @@ import (
 
 	"github.com/tektoncd/pipeline/pkg/apis/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	"knative.dev/pkg/apis"
 	kubeclient "knative.dev/pkg/client/injection/kube/client"
@@ -276,13 +277,111 @@ func ValidatePipelineTaskArtifactBindings(ctx context.Context, bindings *Pipelin
 		if binding.From == "" {
 			errs = errs.Also(apis.ErrMissingField(fmt.Sprintf("inputs[%d].from", i)))
 		} else {
-			// Validate format: tasks.<taskName>.outputs.<artifactName>
 			parts := strings.Split(binding.From, ".")
-			if len(parts) != 4 || parts[0] != "tasks" || parts[2] != "outputs" {
+			switch {
+			case len(parts) == 4 && parts[0] == "tasks" && parts[2] == "outputs":
+				// tasks.<taskName>.outputs.<artifactName>
+			case len(parts) == 3 && parts[0] == "artifacts" && parts[1] == "inputs":
+				// artifacts.inputs.<name> — PipelineRun-provided input
+			default:
 				errs = errs.Also(&apis.FieldError{
-					Message: fmt.Sprintf("invalid from format %q, expected 'tasks.<taskName>.outputs.<artifactName>'", binding.From),
+					Message: fmt.Sprintf("invalid from format %q, expected 'tasks.<taskName>.outputs.<artifactName>' or 'artifacts.inputs.<name>'", binding.From),
 					Paths:   []string{fmt.Sprintf("inputs[%d].from", i)},
 				})
+			}
+		}
+	}
+
+	return errs
+}
+
+// validatePipelineArtifacts validates Pipeline.spec.artifacts declarations.
+func validatePipelineArtifacts(ctx context.Context, artifacts *PipelineArtifactDeclarations, tasks []PipelineTask, finally []PipelineTask) (errs *apis.FieldError) {
+	if artifacts == nil {
+		return nil
+	}
+	if cfg := config.FromContextOrDefaults(ctx); cfg == nil || !cfg.FeatureFlags.EnableArtifacts {
+		return apis.ErrGeneric(fmt.Sprintf("feature flag %s should be set to true to use artifacts feature", config.EnableArtifacts), "")
+	}
+	inputNames := sets.NewString()
+	for idx, in := range artifacts.Inputs {
+		if in.Name == "" {
+			errs = errs.Also(apis.ErrMissingField("name").ViaFieldIndex("inputs", idx).ViaField("artifacts"))
+		}
+		if inputNames.Has(in.Name) {
+			errs = errs.Also(apis.ErrMultipleOneOf("name").ViaFieldIndex("inputs", idx).ViaField("artifacts"))
+		}
+		inputNames.Insert(in.Name)
+		if in.Type != "" && in.Type != ArtifactTypeContent && in.Type != ArtifactTypeReference {
+			errs = errs.Also(&apis.FieldError{
+				Message: fmt.Sprintf("invalid artifact type %q, must be %q or %q", in.Type, ArtifactTypeContent, ArtifactTypeReference),
+				Paths:   []string{fmt.Sprintf("artifacts.inputs[%d].type", idx)},
+			})
+		}
+		if in.Subject {
+			errs = errs.Also(&apis.FieldError{
+				Message: "subject is not allowed on pipeline artifact inputs",
+				Paths:   []string{fmt.Sprintf("artifacts.inputs[%d].subject", idx)},
+			})
+		}
+		if in.Value != "" {
+			errs = errs.Also(&apis.FieldError{
+				Message: "value is not allowed on pipeline artifact inputs",
+				Paths:   []string{fmt.Sprintf("artifacts.inputs[%d].value", idx)},
+			})
+		}
+	}
+
+	pipelineTaskNames := getPipelineTasksNames(tasks)
+	pipelineFinallyTaskNames := getPipelineTasksNames(finally)
+
+	outputNames := sets.NewString()
+	for idx, out := range artifacts.Outputs {
+		if out.Name == "" {
+			errs = errs.Also(apis.ErrMissingField("name").ViaFieldIndex(PipelineTaskOutputs, idx).ViaField("artifacts"))
+		}
+		if outputNames.Has(out.Name) {
+			errs = errs.Also(apis.ErrMultipleOneOf("name").ViaFieldIndex(PipelineTaskOutputs, idx).ViaField("artifacts"))
+		}
+		outputNames.Insert(out.Name)
+
+		if out.From == "" {
+			errs = errs.Also(apis.ErrMissingField("from").ViaFieldIndex(PipelineTaskOutputs, idx).ViaField("artifacts"))
+			continue
+		}
+		parts := strings.Split(out.From, ".")
+		if len(parts) != 4 || (parts[0] != PipelineTasks && parts[0] != PipelineFinallyTasks) || parts[2] != PipelineTaskOutputs {
+			errs = errs.Also(apis.ErrInvalidValue(
+				fmt.Sprintf("invalid from reference %q, expected tasks.<taskName>.outputs.<artifactName>", out.From),
+				"from").ViaFieldIndex(PipelineTaskOutputs, idx).ViaField("artifacts"))
+			continue
+		}
+		taskName := parts[1]
+		if parts[0] == PipelineTasks && !pipelineTaskNames.Has(taskName) {
+			errs = errs.Also(apis.ErrInvalidValue(
+				fmt.Sprintf("referencing nonexistent task %q", taskName),
+				"from").ViaFieldIndex(PipelineTaskOutputs, idx).ViaField("artifacts"))
+		}
+		if parts[0] == PipelineFinallyTasks && !pipelineFinallyTaskNames.Has(taskName) {
+			errs = errs.Also(apis.ErrInvalidValue(
+				fmt.Sprintf("referencing nonexistent finally task %q", taskName),
+				"from").ViaFieldIndex(PipelineTaskOutputs, idx).ViaField("artifacts"))
+		}
+	}
+
+	allTasks := append(tasks, finally...)
+	for _, pt := range allTasks {
+		if pt.Artifacts == nil {
+			continue
+		}
+		for i, binding := range pt.Artifacts.Inputs {
+			parts := strings.Split(binding.From, ".")
+			if len(parts) == 3 && parts[0] == "artifacts" && parts[1] == "inputs" {
+				if !inputNames.Has(parts[2]) {
+					errs = errs.Also(apis.ErrInvalidValue(
+						fmt.Sprintf("referencing undeclared pipeline artifact input %q", parts[2]),
+						"from").ViaFieldIndex("inputs", i).ViaField("artifacts").ViaField(pt.Name))
+				}
 			}
 		}
 	}
