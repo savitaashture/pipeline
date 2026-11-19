@@ -279,7 +279,15 @@ func createTarGzBuffer(path string) (*bytes.Buffer, error) {
 			return nil
 		}
 
-		header, err := tar.FileInfoHeader(fi, "")
+		var link string
+		if fi.Mode()&os.ModeSymlink != 0 {
+			link, err = os.Readlink(file)
+			if err != nil {
+				return err
+			}
+		}
+
+		header, err := tar.FileInfoHeader(fi, link)
 		if err != nil {
 			return err
 		}
@@ -289,7 +297,7 @@ func createTarGzBuffer(path string) (*bytes.Buffer, error) {
 			return err
 		}
 
-		if fi.IsDir() {
+		if fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
 			return nil
 		}
 
@@ -342,6 +350,23 @@ func extractTarGz(r io.Reader, dst string) error {
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+		case tar.TypeSymlink:
+			linkTarget := header.Linkname
+			if filepath.IsAbs(linkTarget) {
+				return fmt.Errorf("invalid symlink target: %s -> %s (absolute path)", header.Name, linkTarget)
+			}
+			resolved := filepath.Join(filepath.Dir(target), linkTarget)
+			if !strings.HasPrefix(filepath.Clean(resolved), filepath.Clean(dst)+string(os.PathSeparator)) &&
+				filepath.Clean(resolved) != filepath.Clean(dst) {
+				return fmt.Errorf("invalid symlink target: %s -> %s", header.Name, linkTarget)
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return err
+			}
+			os.Remove(target)
+			if err := os.Symlink(linkTarget, target); err != nil {
 				return err
 			}
 		case tar.TypeReg:

@@ -80,6 +80,40 @@ type StepArtifacts struct {
 	Outputs []ArtifactDeclaration `json:"outputs,omitempty"`
 }
 
+// PipelineArtifactDeclarations declares artifacts at the Pipeline boundary.
+type PipelineArtifactDeclarations struct {
+	// +listType=atomic
+	Inputs []ArtifactDeclaration `json:"inputs,omitempty"`
+	// +listType=atomic
+	Outputs []PipelineArtifactOutput `json:"outputs,omitempty"`
+}
+
+// PipelineArtifactOutput exposes a Task artifact as a Pipeline
+type PipelineArtifactOutput struct {
+	// Name of the artifact output. Must be unique within Pipeline outputs.
+	Name string `json:"name"`
+	// Description of the artifact.
+	// +optional
+	Description string `json:"description,omitempty"`
+	// From references the producing Task's output:
+	// "tasks.<taskName>.outputs.<artifactName>"
+	From string `json:"from"`
+}
+
+// PipelineRunArtifacts holds artifact inputs provided at PipelineRun creation
+// and artifact outputs populated at PipelineRun completion.
+type PipelineRunArtifacts struct {
+	// Inputs provides artifact values to satisfy Pipeline.spec.artifacts.inputs.
+	// Each input MUST match a name declared in the Pipeline.
+	// +listType=atomic
+	Inputs []Artifact `json:"inputs,omitempty"`
+	// Outputs holds artifact values resolved from child TaskRuns at
+	// PipelineRun completion. This field is read-only and populated by
+	// the controller.
+	// +listType=atomic
+	Outputs []Artifact `json:"outputs,omitempty"`
+}
+
 // PipelineTaskArtifacts configures artifact bindings for a PipelineTask.
 type PipelineTaskArtifacts struct {
 	// Inputs binds artifact inputs from other tasks' outputs.

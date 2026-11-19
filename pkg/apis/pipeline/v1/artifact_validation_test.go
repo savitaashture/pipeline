@@ -348,6 +348,18 @@ func TestValidatePipelineTaskArtifactBindings_OCIRepositoryWithoutEnabled(t *tes
 	}
 }
 
+func TestValidatePipelineTaskArtifactBindings_PipelineInputFormat(t *testing.T) {
+	bindings := &PipelineTaskArtifacts{
+		Inputs: []PipelineTaskArtifactBinding{
+			{Name: "source", From: "artifacts.inputs.source"},
+		},
+	}
+
+	if errs := ValidatePipelineTaskArtifactBindings(artifactsEnabledCtx(), bindings); errs != nil {
+		t.Errorf("expected no errors for artifacts.inputs.<name> format, got: %v", errs)
+	}
+}
+
 func TestValidatePipelineTaskArtifactBindings_InvalidFromFormat(t *testing.T) {
 	bindings := &PipelineTaskArtifacts{
 		Inputs: []PipelineTaskArtifactBinding{
@@ -905,6 +917,385 @@ func TestResolveArtifactStorageForValidation(t *testing.T) {
 			}
 			if resolved.Enabled != tt.wantEnabled {
 				t.Errorf("Enabled = %v, want %v", resolved.Enabled, tt.wantEnabled)
+			}
+		})
+	}
+}
+
+func TestValidatePipelineArtifacts_CrossValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		arts    *PipelineArtifactDeclarations
+		tasks   []PipelineTask
+		finally []PipelineTask
+		wantErr bool
+	}{
+		{
+			name: "valid: task references declared pipeline input",
+			arts: &PipelineArtifactDeclarations{
+				Inputs: []ArtifactDeclaration{{Name: "source"}},
+			},
+			tasks: []PipelineTask{
+				{
+					Name: "build",
+					Artifacts: &PipelineTaskArtifacts{
+						Inputs: []PipelineTaskArtifactBinding{
+							{Name: "src", From: "artifacts.inputs.source"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "error: task references undeclared pipeline input",
+			arts: &PipelineArtifactDeclarations{
+				Inputs: []ArtifactDeclaration{{Name: "source"}},
+			},
+			tasks: []PipelineTask{
+				{
+					Name: "build",
+					Artifacts: &PipelineTaskArtifacts{
+						Inputs: []PipelineTaskArtifactBinding{
+							{Name: "src", From: "artifacts.inputs.missing"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "error: subject not allowed on pipeline inputs",
+			arts: &PipelineArtifactDeclarations{
+				Inputs: []ArtifactDeclaration{{Name: "source", Subject: true}},
+			},
+			tasks:   []PipelineTask{{Name: "build"}},
+			wantErr: true,
+		},
+		{
+			name: "error: value not allowed on pipeline inputs",
+			arts: &PipelineArtifactDeclarations{
+				Inputs: []ArtifactDeclaration{{Name: "source", Value: "$(steps.build.artifacts.img)"}},
+			},
+			tasks:   []PipelineTask{{Name: "build"}},
+			wantErr: true,
+		},
+		{
+			name: "error: invalid type on pipeline input",
+			arts: &PipelineArtifactDeclarations{
+				Inputs: []ArtifactDeclaration{{Name: "source", Type: "invalid"}},
+			},
+			tasks:   []PipelineTask{{Name: "build"}},
+			wantErr: true,
+		},
+		{
+			name: "valid: content type on pipeline input",
+			arts: &PipelineArtifactDeclarations{
+				Inputs: []ArtifactDeclaration{{Name: "source", Type: ArtifactTypeContent}},
+			},
+			tasks: []PipelineTask{{Name: "build"}},
+		},
+		{
+			name: "valid: task uses task output, not pipeline input",
+			arts: &PipelineArtifactDeclarations{
+				Outputs: []PipelineArtifactOutput{
+					{Name: "image", From: "tasks.build.outputs.image"},
+				},
+			},
+			tasks: []PipelineTask{
+				{Name: "build"},
+				{
+					Name: "sign",
+					Artifacts: &PipelineTaskArtifacts{
+						Inputs: []PipelineTaskArtifactBinding{
+							{Name: "img", From: "tasks.build.outputs.image"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:    "error: empty input name",
+			arts:    &PipelineArtifactDeclarations{Inputs: []ArtifactDeclaration{{Name: ""}}},
+			tasks:   []PipelineTask{{Name: "build"}},
+			wantErr: true,
+		},
+		{
+			name: "error: duplicate input names",
+			arts: &PipelineArtifactDeclarations{
+				Inputs: []ArtifactDeclaration{{Name: "source"}, {Name: "source"}},
+			},
+			tasks:   []PipelineTask{{Name: "build"}},
+			wantErr: true,
+		},
+		{
+			name: "error: empty output name",
+			arts: &PipelineArtifactDeclarations{
+				Outputs: []PipelineArtifactOutput{{Name: "", From: "tasks.build.outputs.image"}},
+			},
+			tasks:   []PipelineTask{{Name: "build"}},
+			wantErr: true,
+		},
+		{
+			name: "error: duplicate output names",
+			arts: &PipelineArtifactDeclarations{
+				Outputs: []PipelineArtifactOutput{
+					{Name: "image", From: "tasks.build.outputs.image"},
+					{Name: "image", From: "tasks.build.outputs.logs"},
+				},
+			},
+			tasks:   []PipelineTask{{Name: "build"}},
+			wantErr: true,
+		},
+		{
+			name: "error: empty output from",
+			arts: &PipelineArtifactDeclarations{
+				Outputs: []PipelineArtifactOutput{{Name: "image", From: ""}},
+			},
+			tasks:   []PipelineTask{{Name: "build"}},
+			wantErr: true,
+		},
+		{
+			name: "error: invalid output from format",
+			arts: &PipelineArtifactDeclarations{
+				Outputs: []PipelineArtifactOutput{{Name: "image", From: "invalid.ref"}},
+			},
+			tasks:   []PipelineTask{{Name: "build"}},
+			wantErr: true,
+		},
+		{
+			name: "error: output references nonexistent task",
+			arts: &PipelineArtifactDeclarations{
+				Outputs: []PipelineArtifactOutput{
+					{Name: "image", From: "tasks.nonexistent.outputs.image"},
+				},
+			},
+			tasks:   []PipelineTask{{Name: "build"}},
+			wantErr: true,
+		},
+		{
+			name: "error: output references nonexistent finally task",
+			arts: &PipelineArtifactDeclarations{
+				Outputs: []PipelineArtifactOutput{
+					{Name: "image", From: "finally.nonexistent.outputs.image"},
+				},
+			},
+			tasks:   []PipelineTask{{Name: "build"}},
+			finally: []PipelineTask{{Name: "cleanup"}},
+			wantErr: true,
+		},
+		{
+			name: "valid: output references existing finally task",
+			arts: &PipelineArtifactDeclarations{
+				Outputs: []PipelineArtifactOutput{
+					{Name: "image", From: "finally.cleanup.outputs.image"},
+				},
+			},
+			tasks:   []PipelineTask{{Name: "build"}},
+			finally: []PipelineTask{{Name: "cleanup"}},
+		},
+		{
+			name: "valid: finally task references declared pipeline input",
+			arts: &PipelineArtifactDeclarations{
+				Inputs: []ArtifactDeclaration{{Name: "source"}},
+			},
+			tasks: []PipelineTask{{Name: "build"}},
+			finally: []PipelineTask{
+				{
+					Name: "cleanup",
+					Artifacts: &PipelineTaskArtifacts{
+						Inputs: []PipelineTaskArtifactBinding{
+							{Name: "src", From: "artifacts.inputs.source"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "error: finally task references undeclared pipeline input",
+			arts: &PipelineArtifactDeclarations{
+				Inputs: []ArtifactDeclaration{{Name: "source"}},
+			},
+			tasks: []PipelineTask{{Name: "build"}},
+			finally: []PipelineTask{
+				{
+					Name: "cleanup",
+					Artifacts: &PipelineTaskArtifacts{
+						Inputs: []PipelineTaskArtifactBinding{
+							{Name: "src", From: "artifacts.inputs.missing"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := validatePipelineArtifacts(artifactsEnabledCtx(), tt.arts, tt.tasks, tt.finally)
+			if (errs != nil) != tt.wantErr {
+				t.Errorf("validatePipelineArtifacts() errors = %v, wantErr %v", errs, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidatePipelineRunArtifacts(t *testing.T) {
+	tests := []struct {
+		name    string
+		spec    *PipelineRunSpec
+		wantErr bool
+	}{
+		{
+			name: "valid: nil artifacts",
+			spec: &PipelineRunSpec{},
+		},
+		{
+			name: "valid: input with uri and digest",
+			spec: &PipelineRunSpec{
+				Artifacts: &PipelineRunArtifacts{
+					Inputs: []Artifact{
+						{
+							Name: "source",
+							Values: []ArtifactValue{
+								{
+									Uri:    "oci://registry:5000/artifacts/source@sha256:abc123",
+									Digest: map[Algorithm]string{"sha256": "abc123"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "error: empty input name",
+			spec: &PipelineRunSpec{
+				Artifacts: &PipelineRunArtifacts{
+					Inputs: []Artifact{
+						{
+							Name: "",
+							Values: []ArtifactValue{
+								{
+									Uri:    "oci://registry:5000/artifacts/source@sha256:abc123",
+									Digest: map[Algorithm]string{"sha256": "abc123"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "error: duplicate input names",
+			spec: &PipelineRunSpec{
+				Artifacts: &PipelineRunArtifacts{
+					Inputs: []Artifact{
+						{
+							Name: "source",
+							Values: []ArtifactValue{
+								{
+									Uri:    "oci://registry:5000/artifacts/source@sha256:abc123",
+									Digest: map[Algorithm]string{"sha256": "abc123"},
+								},
+							},
+						},
+						{
+							Name: "source",
+							Values: []ArtifactValue{
+								{
+									Uri:    "oci://registry:5000/artifacts/other@sha256:def456",
+									Digest: map[Algorithm]string{"sha256": "def456"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "error: subject not allowed on inputs",
+			spec: &PipelineRunSpec{
+				Artifacts: &PipelineRunArtifacts{
+					Inputs: []Artifact{
+						{
+							Name:    "source",
+							Subject: true,
+							Values: []ArtifactValue{
+								{
+									Uri:    "oci://registry:5000/artifacts/source@sha256:abc123",
+									Digest: map[Algorithm]string{"sha256": "abc123"},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "error: empty values",
+			spec: &PipelineRunSpec{
+				Artifacts: &PipelineRunArtifacts{
+					Inputs: []Artifact{
+						{Name: "source", Values: []ArtifactValue{}},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "error: missing uri",
+			spec: &PipelineRunSpec{
+				Artifacts: &PipelineRunArtifacts{
+					Inputs: []Artifact{
+						{
+							Name: "source",
+							Values: []ArtifactValue{
+								{Digest: map[Algorithm]string{"sha256": "abc123"}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "error: missing digest",
+			spec: &PipelineRunSpec{
+				Artifacts: &PipelineRunArtifacts{
+					Inputs: []Artifact{
+						{
+							Name: "source",
+							Values: []ArtifactValue{
+								{Uri: "oci://registry:5000/artifacts/source@sha256:abc123"},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "error: outputs not allowed",
+			spec: &PipelineRunSpec{
+				Artifacts: &PipelineRunArtifacts{
+					Outputs: []Artifact{
+						{Name: "image"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := tt.spec.validatePipelineRunArtifacts(artifactsEnabledCtx())
+			if (errs != nil) != tt.wantErr {
+				t.Errorf("validatePipelineRunArtifacts() errors = %v, wantErr %v", errs, tt.wantErr)
 			}
 		})
 	}

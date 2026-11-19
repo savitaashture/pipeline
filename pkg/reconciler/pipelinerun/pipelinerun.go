@@ -702,6 +702,14 @@ func (c *Reconciler) reconcile(ctx context.Context, pr *v1.PipelineRun, getPipel
 		return controller.NewPermanentError(err)
 	}
 
+	// Ensure that the artifact inputs provided by the PipelineRun match the Pipeline's declarations.
+	if err := resources.ValidateArtifactInputs(pipelineSpec, pr); err != nil {
+		pr.Status.MarkFailed(v1.PipelineRunReasonFailedValidation.String(),
+			"PipelineRun %s/%s artifact inputs don't match Pipeline %s/%s: %s",
+			pr.Namespace, pr.Name, pr.Namespace, pipelineMeta.Name, err)
+		return controller.NewPermanentError(err)
+	}
+
 	// Ensure that the TaskRunSpecs defined are correct.
 	if err := resources.ValidateTaskRunSpecs(pipelineSpec, pr); err != nil {
 		pr.Status.MarkFailed(v1.PipelineRunReasonInvalidTaskRunSpec.String(),
@@ -1025,6 +1033,19 @@ func (c *Reconciler) reconcile(ctx context.Context, pr *v1.PipelineRun, getPipel
 				pr.Name, err)
 			return err
 		}
+
+		if pipelineSpec.Artifacts != nil && len(pipelineSpec.Artifacts.Outputs) > 0 {
+			artifactOutputs := resources.ApplyTaskArtifactsToPipelineArtifacts(
+				pipelineSpec.Artifacts.Outputs,
+				pipelineRunFacts.State.GetTaskRunsArtifacts(),
+			)
+			if len(artifactOutputs) > 0 {
+				if pr.Status.Artifacts == nil {
+					pr.Status.Artifacts = &v1.PipelineRunArtifacts{}
+				}
+				pr.Status.Artifacts.Outputs = artifactOutputs
+			}
+		}
 	}
 
 	logger.Infof("PipelineRun %s status is being set to %s", pr.Name, after)
@@ -1125,7 +1146,11 @@ func (c *Reconciler) runNextSchedulableTask(ctx context.Context, pr *v1.Pipeline
 		resources.PropagateResults(rpt, pipelineRunFacts.State)
 
 		// propagate previous task artifacts
-		err = resources.PropagateArtifacts(rpt, pipelineRunFacts.State)
+		var prInputArtifacts []v1.Artifact
+		if pr.Spec.Artifacts != nil {
+			prInputArtifacts = pr.Spec.Artifacts.Inputs
+		}
+		err = resources.PropagateArtifacts(rpt, pipelineRunFacts.State, prInputArtifacts)
 		if err != nil {
 			logger.Errorf("Failed to propagate artifacts due to error: %v", err)
 			return controller.NewPermanentError(err)
@@ -1476,11 +1501,15 @@ func (c *Reconciler) createTaskRun(ctx context.Context, taskRunName string, para
 		tr.Annotations[workspace.AnnotationAffinityAssistantName] = aaAnnotationVal
 	}
 
-	// Resolve artifact input bindings from upstream tasks
+	// Resolve artifact input bindings from upstream tasks or PipelineRun inputs
 	cfg := config.FromContextOrDefaults(ctx)
 	if cfg.FeatureFlags.EnableArtifacts && rpt.PipelineTask.Artifacts != nil && len(rpt.PipelineTask.Artifacts.Inputs) > 0 {
 		taskArtifacts := facts.State.GetTaskRunsArtifacts()
-		resolvedInputs, resolveErr := resources.ResolveArtifactInputsForTask(rpt.PipelineTask, taskArtifacts)
+		var prInputs []v1.Artifact
+		if pr.Spec.Artifacts != nil {
+			prInputs = pr.Spec.Artifacts.Inputs
+		}
+		resolvedInputs, resolveErr := resources.ResolveArtifactInputsForTask(rpt.PipelineTask, taskArtifacts, prInputs)
 		if resolveErr != nil {
 			logger.Warnf("Failed to resolve artifact inputs for task %s: %v", rpt.PipelineTask.Name, resolveErr)
 		} else if len(resolvedInputs) > 0 {
