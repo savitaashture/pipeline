@@ -47,6 +47,26 @@ go test ./...
 By default `go test` will not run [the end to end tests](#end-to-end-tests),
 which need `-tags=e2e` to be enabled.
 
+### Image performance
+
+This check currently covers only the entrypoint binary, in default and
+`disable_spire` builds. The approach can be extended to other Tekton images.
+Run on Linux:
+
+```shell
+bash hack/image_performance.sh origin/main /tmp/image-performance
+```
+
+The report includes binary size, entrypoint memory use (RSS), and time to start
+and exit with `-help`. After warm-up, each binary runs 30 times for memory checks
+and 30 times for startup checks. The base and PR binaries take turns running
+first. All measurements are saved as JSON.
+
+Default limits are 24 MiB for size/RSS
+and 10% binary growth over the base. Pass test flags after the output directory
+to adjust these limits. Startup is report-only unless `-max-startup-growth` is
+set; its gate has a 3 ms noise floor. This does not measure image pulls or signing.
+
 ### Unit testing Controllers
 
 Kubernetes [client-go](https://godoc.org/k8s.io/client-go) provides a number of

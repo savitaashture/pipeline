@@ -1,4 +1,4 @@
-# cel.dev/cel-go v0.32.0
+# cel.dev/cel-go v0.33.2
 ## explicit; go 1.23.0
 cel.dev/cel-go/cel
 cel.dev/cel-go/cel/async
@@ -394,14 +394,7 @@ github.com/gaganhr94/docker-credential-acr/pkg/token
 # github.com/go-fed/httpsig v1.1.0
 ## explicit; go 1.13
 github.com/go-fed/httpsig
-# github.com/go-jose/go-jose/v3 v3.0.5
-## explicit; go 1.12
-github.com/go-jose/go-jose/v3
-github.com/go-jose/go-jose/v3/cipher
-github.com/go-jose/go-jose/v3/cryptosigner
-github.com/go-jose/go-jose/v3/json
-github.com/go-jose/go-jose/v3/jwt
-# github.com/go-jose/go-jose/v4 v4.1.5
+# github.com/go-jose/go-jose/v4 v4.1.9
 ## explicit; go 1.24.0
 github.com/go-jose/go-jose/v4
 github.com/go-jose/go-jose/v4/cipher
@@ -826,7 +819,7 @@ github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig
 github.com/spiffe/go-spiffe/v2/svid/jwtsvid
 github.com/spiffe/go-spiffe/v2/svid/x509svid
 github.com/spiffe/go-spiffe/v2/workloadapi
-# github.com/spiffe/spire-api-sdk v1.15.3
+# github.com/spiffe/spire-api-sdk v1.16.0
 ## explicit; go 1.23.0
 github.com/spiffe/spire-api-sdk/proto/spire/api/server/entry/v1
 github.com/spiffe/spire-api-sdk/proto/spire/api/types
@@ -1011,7 +1004,7 @@ go.yaml.in/yaml/v2
 # go.yaml.in/yaml/v3 v3.0.6
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
-# golang.org/x/crypto v0.58.0
+# golang.org/x/crypto v0.59.0
 ## explicit; go 1.26.0
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blake2b
@@ -1040,12 +1033,12 @@ golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 # golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 ## explicit; go 1.22.0
 golang.org/x/exp/slices
-# golang.org/x/mod v0.41.0
+# golang.org/x/mod v0.42.0
 ## explicit; go 1.26.0
 golang.org/x/mod/internal/lazyregexp
 golang.org/x/mod/module
 golang.org/x/mod/semver
-# golang.org/x/net v0.61.0
+# golang.org/x/net v0.62.0
 ## explicit; go 1.26.0
 golang.org/x/net/context/ctxhttp
 golang.org/x/net/http/httpguts
@@ -1078,17 +1071,17 @@ golang.org/x/oauth2/jwt
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
 golang.org/x/sync/singleflight
-# golang.org/x/sys v0.49.0
+# golang.org/x/sys v0.50.0
 ## explicit; go 1.26.0
 golang.org/x/sys/cpu
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# golang.org/x/term v0.47.0
+# golang.org/x/term v0.48.0
 ## explicit; go 1.26.0
 golang.org/x/term
-# golang.org/x/text v0.43.0
+# golang.org/x/text v0.44.0
 ## explicit; go 1.26.0
 golang.org/x/text/cases
 golang.org/x/text/internal
@@ -1103,7 +1096,7 @@ golang.org/x/text/unicode/norm
 # golang.org/x/time v0.15.0
 ## explicit; go 1.25.0
 golang.org/x/time/rate
-# golang.org/x/tools v0.51.0
+# golang.org/x/tools v0.52.0
 ## explicit; go 1.26.0
 golang.org/x/tools/go/ast/astutil
 golang.org/x/tools/go/ast/edge

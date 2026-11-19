@@ -22,13 +22,11 @@ import (
 	"context"
 
 	"github.com/tektoncd/pipeline/pkg/result"
-	"github.com/tektoncd/pipeline/pkg/spire"
+	spireclient "github.com/tektoncd/pipeline/pkg/spire/client"
 )
 
 // EntrypointerAPIClient defines the interface for SPIRE operations
-type EntrypointerAPIClient interface {
-	spire.EntrypointerAPIClient
-}
+type EntrypointerAPIClient = spireclient.EntrypointerAPIClient
 
 func signResults(ctx context.Context, api EntrypointerAPIClient, results []result.RunResult) ([]result.RunResult, error) {
 	if api == nil {

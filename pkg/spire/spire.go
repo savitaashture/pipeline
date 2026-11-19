@@ -28,8 +28,10 @@ import (
 	"context"
 	"time"
 
+	spiresigning "github.com/tektoncd/pipeline/internal/spire"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/result"
+	spireclient "github.com/tektoncd/pipeline/pkg/spire/client"
 	spireconfig "github.com/tektoncd/pipeline/pkg/spire/config"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
@@ -46,11 +48,11 @@ const (
 	// not set if spire checks pass
 	VerifiedAnnotation = "tekton.dev/spire-verified"
 	// KeySVID key used by TaskRun SVID
-	KeySVID = "SVID"
+	KeySVID = spiresigning.KeySVID
 	// KeySignatureSuffix is the suffix of the keys that contain signatures
-	KeySignatureSuffix = ".sig"
+	KeySignatureSuffix = spiresigning.KeySignatureSuffix
 	// KeyResultManifest key used to get the result manifest from the results
-	KeyResultManifest = "RESULT_MANIFEST"
+	KeyResultManifest = spiresigning.KeyResultManifest
 	// WorkloadAPI is the name of the SPIFFE/SPIRE CSI Driver volume
 	WorkloadAPI = "spiffe-workload-api"
 	// VolumeMountPath is the volume mount in the pods to access the SPIFFE/SPIRE agent workload API
@@ -70,8 +72,4 @@ type ControllerAPIClient interface {
 }
 
 // EntrypointerAPIClient interface maps to the spire entrypointer API to interact with spire
-type EntrypointerAPIClient interface {
-	Close() error
-	// Sign returns the signature material to be put in the RunResult to append to the output results
-	Sign(ctx context.Context, results []result.RunResult) ([]result.RunResult, error)
-}
+type EntrypointerAPIClient = spireclient.EntrypointerAPIClient
