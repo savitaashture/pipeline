@@ -88,12 +88,10 @@ func ValidateArtifactStorageAnnotations(annotations map[string]string) *apis.Fie
 
 	var errs *apis.FieldError
 
-	if v, ok := annotations[config.ArtifactStorageEnabledAnnotation]; ok {
-		if _, err := strconv.ParseBool(v); err != nil {
-			errs = errs.Also(apis.ErrInvalidValue(
-				fmt.Sprintf("invalid boolean %q", v),
-				"metadata.annotations["+config.ArtifactStorageEnabledAnnotation+"]"))
-		}
+	if v, ok := annotations[config.ArtifactStorageOCIRepositoryAnnotation]; ok && v == "" {
+		errs = errs.Also(apis.ErrInvalidValue(
+			"must not be empty",
+			"metadata.annotations["+config.ArtifactStorageOCIRepositoryAnnotation+"]"))
 	}
 
 	if v, ok := annotations[config.ArtifactStorageInlineThresholdAnnotation]; ok {
@@ -108,31 +106,6 @@ func ValidateArtifactStorageAnnotations(annotations map[string]string) *apis.Fie
 				"metadata.annotations["+config.ArtifactStorageInlineThresholdAnnotation+"]"))
 		}
 	}
-
-	if v, ok := annotations[config.ArtifactStorageInsecureAnnotation]; ok {
-		if _, err := strconv.ParseBool(v); err != nil {
-			errs = errs.Also(apis.ErrInvalidValue(
-				fmt.Sprintf("invalid boolean %q", v),
-				"metadata.annotations["+config.ArtifactStorageInsecureAnnotation+"]"))
-		}
-	}
-
-	if v, ok := annotations[config.ArtifactStorageOCIAttachReferrersAnnotation]; ok {
-		if _, err := strconv.ParseBool(v); err != nil {
-			errs = errs.Also(apis.ErrInvalidValue(
-				fmt.Sprintf("invalid boolean %q", v),
-				"metadata.annotations["+config.ArtifactStorageOCIAttachReferrersAnnotation+"]"))
-		}
-	}
-
-	if v, ok := annotations[config.ArtifactStorageOCIGroupByPipelineRunAnnotation]; ok {
-		if _, err := strconv.ParseBool(v); err != nil {
-			errs = errs.Also(apis.ErrInvalidValue(
-				fmt.Sprintf("invalid boolean %q", v),
-				"metadata.annotations["+config.ArtifactStorageOCIGroupByPipelineRunAnnotation+"]"))
-		}
-	}
-
 	return errs
 }
 

@@ -530,28 +530,6 @@ func TestValidateArtifactStorageAnnotations(t *testing.T) {
 			wantErr:     false,
 		},
 		{
-			name: "valid enabled true",
-			annotations: map[string]string{
-				config.ArtifactStorageEnabledAnnotation: "true",
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid enabled false",
-			annotations: map[string]string{
-				config.ArtifactStorageEnabledAnnotation: "false",
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid enabled",
-			annotations: map[string]string{
-				config.ArtifactStorageEnabledAnnotation: "notbool",
-			},
-			wantErr:     true,
-			errContains: config.ArtifactStorageEnabledAnnotation,
-		},
-		{
 			name: "valid inline-threshold",
 			annotations: map[string]string{
 				config.ArtifactStorageInlineThresholdAnnotation: "256",
@@ -583,70 +561,27 @@ func TestValidateArtifactStorageAnnotations(t *testing.T) {
 			errContains: config.ArtifactStorageInlineThresholdAnnotation,
 		},
 		{
-			name: "valid insecure",
+			name: "valid oci-repository",
 			annotations: map[string]string{
-				config.ArtifactStorageInsecureAnnotation: "false",
+				config.ArtifactStorageOCIRepositoryAnnotation: "ghcr.io/test",
 			},
 			wantErr: false,
 		},
 		{
-			name: "invalid insecure",
+			name: "valid oci-repository empty",
 			annotations: map[string]string{
-				config.ArtifactStorageInsecureAnnotation: "xyz",
+				config.ArtifactStorageOCIRepositoryAnnotation: "",
 			},
 			wantErr:     true,
-			errContains: config.ArtifactStorageInsecureAnnotation,
-		},
-		{
-			name: "valid attach-referrers",
-			annotations: map[string]string{
-				config.ArtifactStorageOCIAttachReferrersAnnotation: "true",
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid attach-referrers",
-			annotations: map[string]string{
-				config.ArtifactStorageOCIAttachReferrersAnnotation: "nope",
-			},
-			wantErr:     true,
-			errContains: config.ArtifactStorageOCIAttachReferrersAnnotation,
-		},
-		{
-			name: "valid group-by-pipelinerun",
-			annotations: map[string]string{
-				config.ArtifactStorageOCIGroupByPipelineRunAnnotation: "false",
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid group-by-pipelinerun",
-			annotations: map[string]string{
-				config.ArtifactStorageOCIGroupByPipelineRunAnnotation: "bad",
-			},
-			wantErr:     true,
-			errContains: config.ArtifactStorageOCIGroupByPipelineRunAnnotation,
+			errContains: config.ArtifactStorageOCIRepositoryAnnotation,
 		},
 		{
 			name: "multiple valid annotations",
 			annotations: map[string]string{
-				config.ArtifactStorageEnabledAnnotation:            "true",
-				config.ArtifactStorageInsecureAnnotation:           "false",
-				config.ArtifactStorageInlineThresholdAnnotation:    "128",
-				config.ArtifactStorageOCIRepositoryAnnotation:      "ghcr.io/test",
-				config.ArtifactStorageOCIAttachReferrersAnnotation: "true",
+				config.ArtifactStorageInlineThresholdAnnotation: "128",
+				config.ArtifactStorageOCIRepositoryAnnotation:   "ghcr.io/test",
 			},
 			wantErr: false,
-		},
-		{
-			name: "multiple invalid annotations",
-			annotations: map[string]string{
-				config.ArtifactStorageEnabledAnnotation:         "bad",
-				config.ArtifactStorageInsecureAnnotation:        "bad",
-				config.ArtifactStorageInlineThresholdAnnotation: "bad",
-			},
-			wantErr:  true,
-			errCount: 2,
 		},
 		{
 			name: "unrelated annotations ignored",
@@ -795,14 +730,14 @@ func TestResolveArtifactStorageForValidation(t *testing.T) {
 			wantEnabled: false,
 		},
 		{
-			name:    "no kubeclient annotation overrides enabled",
+			name:    "no kubeclient unknown annotation is ignored",
 			storage: clusterConfig,
 			annotations: map[string]string{
-				config.ArtifactStorageEnabledAnnotation: "true",
+				"tekton.dev/something-else": "true",
 			},
 			useKube:     false,
 			wantRepo:    "cluster-repo",
-			wantEnabled: true,
+			wantEnabled: false,
 		},
 		{
 			name:        "nil ArtifactStorage returns context unchanged",
@@ -847,7 +782,7 @@ func TestResolveArtifactStorageForValidation(t *testing.T) {
 			wantEnabled: false,
 		},
 		{
-			name:      "annotation wins over namespace configmap",
+			name:      "annotation oci-repository wins over namespace configmap",
 			storage:   clusterConfig,
 			namespace: "test-ns",
 			nsCMData: map[string]string{
@@ -856,11 +791,10 @@ func TestResolveArtifactStorageForValidation(t *testing.T) {
 			},
 			annotations: map[string]string{
 				config.ArtifactStorageOCIRepositoryAnnotation: "annotation-repo",
-				config.ArtifactStorageEnabledAnnotation:       "false",
 			},
 			useKube:     true,
 			wantRepo:    "annotation-repo",
-			wantEnabled: false,
+			wantEnabled: true,
 		},
 		{
 			name:      "namespace overrides only some fields",
