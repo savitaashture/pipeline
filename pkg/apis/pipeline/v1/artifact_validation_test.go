@@ -402,7 +402,6 @@ func TestValidatePipelineTaskArtifactBindings_EmptyFrom(t *testing.T) {
 func TestValidateStepArtifacts_Nil(t *testing.T) {
 	errs := ValidateStepArtifacts(artifactsEnabledCtx(), nil)
 	if errs != nil {
-
 		t.Errorf("expected no error for nil, got: %v", errs)
 	}
 }
@@ -614,10 +613,8 @@ func TestValidateArtifactStorageAnnotations(t *testing.T) {
 						t.Errorf("expected at least %d errors, got %d: %s", tt.errCount, count, errStr)
 					}
 				}
-			} else {
-				if errs != nil {
-					t.Errorf("expected no error, got: %v", errs)
-				}
+			} else if errs != nil {
+				t.Errorf("expected no error, got: %v", errs)
 			}
 		})
 	}

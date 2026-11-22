@@ -19,6 +19,7 @@ package artifactstorage
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"hash"
 	"io"
@@ -28,7 +29,7 @@ import (
 )
 
 // VerifyingReader wraps an io.ReadCloser and verifies the SHA-256 digest of
-// the content when the stream is fully consumed. It returns ErrDigestMismatch
+// the content when the stream is fully consumed. It returns DigestMismatchError
 // from Read once EOF is reached and the digest does not match.
 type VerifyingReader struct {
 	inner    io.ReadCloser
@@ -55,9 +56,9 @@ func (vr *VerifyingReader) Read(p []byte) (int, error) {
 	}
 	if err == io.EOF && !vr.done {
 		vr.done = true
-		actual := fmt.Sprintf("%x", vr.hasher.Sum(nil))
+		actual := hex.EncodeToString(vr.hasher.Sum(nil))
 		if actual != vr.expected {
-			return n, &ErrDigestMismatch{
+			return n, &DigestMismatchError{
 				Algorithm: "sha256",
 				Expected:  vr.expected,
 				Actual:    actual,
@@ -71,14 +72,14 @@ func (vr *VerifyingReader) Close() error {
 	return vr.inner.Close()
 }
 
-// ErrDigestMismatch is returned when fetched content does not match the expected digest.
-type ErrDigestMismatch struct {
+// DigestMismatchError is returned when fetched content does not match the expected digest.
+type DigestMismatchError struct {
 	Algorithm string
 	Expected  string
 	Actual    string
 }
 
-func (e *ErrDigestMismatch) Error() string {
+func (e *DigestMismatchError) Error() string {
 	return fmt.Sprintf("digest verification failed: expected %s:%s, got %s:%s",
 		e.Algorithm, e.Expected, e.Algorithm, e.Actual)
 }

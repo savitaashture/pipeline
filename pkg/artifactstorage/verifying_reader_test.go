@@ -19,8 +19,8 @@ package artifactstorage
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"testing"
 )
@@ -34,7 +34,7 @@ func (nopCloser) Close() error { return nil }
 func TestVerifyingReader_MatchingDigest(t *testing.T) {
 	content := []byte("hello world")
 	h := sha256.Sum256(content)
-	expected := fmt.Sprintf("%x", h)
+	expected := hex.EncodeToString(h[:])
 
 	vr := NewVerifyingReader(nopCloser{bytes.NewReader(content)}, expected)
 	got, err := io.ReadAll(vr)
@@ -56,9 +56,9 @@ func TestVerifyingReader_MismatchedDigest(t *testing.T) {
 		t.Fatal("expected digest mismatch error, got nil")
 	}
 
-	var mismatch *ErrDigestMismatch
+	var mismatch *DigestMismatchError
 	if !errors.As(err, &mismatch) {
-		t.Fatalf("expected ErrDigestMismatch, got %T: %v", err, err)
+		t.Fatalf("expected DigestMismatchError, got %T: %v", err, err)
 	}
 	if mismatch.Expected != wrongDigest {
 		t.Errorf("expected digest %q, got %q", wrongDigest, mismatch.Expected)
@@ -68,7 +68,7 @@ func TestVerifyingReader_MismatchedDigest(t *testing.T) {
 func TestVerifyingReader_EmptyContent(t *testing.T) {
 	content := []byte{}
 	h := sha256.Sum256(content)
-	expected := fmt.Sprintf("%x", h)
+	expected := hex.EncodeToString(h[:])
 
 	vr := NewVerifyingReader(nopCloser{bytes.NewReader(content)}, expected)
 	got, err := io.ReadAll(vr)
