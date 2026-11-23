@@ -87,6 +87,25 @@ The `tracing-protocol` key controls distributed tracing:
 > are no longer supported. See the
 > [migration guide](metrics-migration-otel.md) for details on upgrading.
 
+### OTLP HTTP endpoint URLs
+
+For `http/protobuf`, configure the complete collector URL, including the signal
+path:
+
+| ConfigMap data | value | description |
+|---|---|---|
+| `metrics-protocol` | `http/protobuf` | Exports metrics over OTLP HTTP |
+| `metrics-endpoint` | `http://otel-collector.observability.svc.cluster.local:4318/v1/metrics` | Complete metrics collector URL |
+| `tracing-protocol` | `http/protobuf` | Exports traces over OTLP HTTP |
+| `tracing-endpoint` | `http://otel-collector.observability.svc.cluster.local:4318/v1/traces` | Complete tracing collector URL |
+
+URLs are used as configured; a URL without a path targets `/`.
+
+Environment overrides retain their OpenTelemetry behavior:
+`OTEL_EXPORTER_OTLP_ENDPOINT` appends the signal path to the base URL, while
+`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` and `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` use
+the complete URL as configured. Prometheus and gRPC endpoints are unaffected.
+
 ### Tekton-specific metrics settings
 
 By default, taskrun and pipelinerun metrics have these values:
