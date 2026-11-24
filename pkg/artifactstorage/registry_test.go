@@ -30,10 +30,10 @@ type fakeProvider struct {
 
 func (f *fakeProvider) Name() string { return f.name }
 func (f *fakeProvider) Store(context.Context, StoreOptions, io.Reader) (*v1.ArtifactStorageRef, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil // test fake
 }
 func (f *fakeProvider) Fetch(context.Context, *v1.ArtifactStorageRef) (io.ReadCloser, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil // test fake
 }
 func (f *fakeProvider) Delete(context.Context, *v1.ArtifactStorageRef) error { return nil }
 func (f *fakeProvider) Exists(context.Context, *v1.ArtifactStorageRef) (bool, error) {

@@ -21,7 +21,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,11 +35,11 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/static"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
-	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	v1types "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"github.com/tektoncd/pipeline/pkg/artifactstorage"
 )
 
@@ -82,8 +84,8 @@ func NewOCIProvider(repository string, opts ...Option) *OCIProvider {
 
 func (p *OCIProvider) Name() string { return "oci" }
 
-// ContentAddressed reports that OCI pulls are digest-pinned and therefore
-// self-verifying, so core skips wrapping Fetch in a verifying reader.
+// ContentAddressed returns true because Fetch already verifies ref.Digest
+// internally. This tells VerifiedFetch to skip its own redundant check.
 func (p *OCIProvider) ContentAddressed() bool { return true }
 
 func (p *OCIProvider) nameOpts() []name.Option {
@@ -109,7 +111,7 @@ func (p *OCIProvider) buildRemoteOpts(ctx context.Context) []remote.Option {
 
 const artifactConfigMediaType = "application/vnd.tekton.artifact.config.v1+json"
 
-func (p *OCIProvider) Store(ctx context.Context, opts artifactstorage.StoreOptions, content io.Reader) (*pipelinev1.ArtifactStorageRef, error) {
+func (p *OCIProvider) Store(ctx context.Context, opts artifactstorage.StoreOptions, content io.Reader) (*v1types.ArtifactStorageRef, error) {
 	data, err := io.ReadAll(content)
 	if err != nil {
 		return nil, fmt.Errorf("reading content: %w", err)
@@ -117,17 +119,14 @@ func (p *OCIProvider) Store(ctx context.Context, opts artifactstorage.StoreOptio
 
 	h := sha256.New()
 	h.Write(data)
-	contentDigest := fmt.Sprintf("%x", h.Sum(nil))
+	contentDigest := hex.EncodeToString(h.Sum(nil))
 
 	layerMediaType := types.MediaType(opts.MediaType)
 	if layerMediaType == "" {
-		layerMediaType = types.OCILayer
+		layerMediaType = types.MediaType(detectContentType(data))
 	}
 
-	layer, err := tarball.LayerFromReader(bytes.NewReader(data), tarball.WithMediaType(layerMediaType))
-	if err != nil {
-		return nil, fmt.Errorf("creating layer: %w", err)
-	}
+	layer := static.NewLayer(data, layerMediaType)
 
 	img, err := mutate.AppendLayers(mutate.MediaType(empty.Image, types.OCIManifestSchema1), layer)
 	if err != nil {
@@ -203,7 +202,7 @@ func (p *OCIProvider) Store(ctx context.Context, opts artifactstorage.StoreOptio
 		return nil, fmt.Errorf("pushing artifact to %s: %w", ref.String(), err)
 	}
 
-	return &pipelinev1.ArtifactStorageRef{
+	return &v1types.ArtifactStorageRef{
 		Backend:     "oci",
 		Location:    ref.String(),
 		Digest:      "sha256:" + contentDigest,
@@ -211,7 +210,7 @@ func (p *OCIProvider) Store(ctx context.Context, opts artifactstorage.StoreOptio
 	}, nil
 }
 
-func (p *OCIProvider) Fetch(ctx context.Context, ref *pipelinev1.ArtifactStorageRef) (io.ReadCloser, error) {
+func (p *OCIProvider) Fetch(ctx context.Context, ref *v1types.ArtifactStorageRef) (io.ReadCloser, error) {
 	parsed, err := name.ParseReference(ref.Location, p.nameOpts()...)
 	if err != nil {
 		return nil, fmt.Errorf("parsing artifact reference %q: %w", ref.Location, err)
@@ -230,10 +229,18 @@ func (p *OCIProvider) Fetch(ctx context.Context, ref *pipelinev1.ArtifactStorage
 		return nil, fmt.Errorf("artifact at %s has no layers", ref.Location)
 	}
 
-	return layerReadCloser(layers[0])
+	rc, err := layerReadCloser(layers[0])
+	if err != nil {
+		return nil, err
+	}
+
+	if digest := strings.TrimPrefix(ref.Digest, "sha256:"); digest != "" {
+		return artifactstorage.NewVerifyingReader(rc, digest), nil
+	}
+	return rc, nil
 }
 
-func (p *OCIProvider) Delete(ctx context.Context, ref *pipelinev1.ArtifactStorageRef) error {
+func (p *OCIProvider) Delete(ctx context.Context, ref *v1types.ArtifactStorageRef) error {
 	parsed, err := name.ParseReference(ref.Location, p.nameOpts()...)
 	if err != nil {
 		return fmt.Errorf("parsing artifact reference %q: %w", ref.Location, err)
@@ -241,7 +248,7 @@ func (p *OCIProvider) Delete(ctx context.Context, ref *pipelinev1.ArtifactStorag
 	return remote.Delete(parsed, p.buildRemoteOpts(ctx)...)
 }
 
-func (p *OCIProvider) Exists(ctx context.Context, ref *pipelinev1.ArtifactStorageRef) (bool, error) {
+func (p *OCIProvider) Exists(ctx context.Context, ref *v1types.ArtifactStorageRef) (bool, error) {
 	parsed, err := name.ParseReference(ref.Location, p.nameOpts()...)
 	if err != nil {
 		return false, fmt.Errorf("parsing artifact reference %q: %w", ref.Location, err)
@@ -257,14 +264,44 @@ func (p *OCIProvider) Exists(ctx context.Context, ref *pipelinev1.ArtifactStorag
 	return true, nil
 }
 
-// layerReadCloser returns a ReadCloser for the compressed layer content.
 func layerReadCloser(layer v1.Layer) (io.ReadCloser, error) {
 	return layer.Compressed()
 }
 
-// isNotFound checks if the error indicates a 404 / not-found response.
+// detectContentType sniffs the content bytes and returns a MIME type.
+// It improves on http.DetectContentType by recognising JSON and XML,
+// which the standard library reports as "text/plain".
+func detectContentType(data []byte) string {
+	trimmed := bytes.TrimLeft(data, " \t\r\n")
+	if len(trimmed) > 0 {
+		switch trimmed[0] {
+		case '{', '[':
+			return "application/json"
+		case '<':
+			return "application/xml"
+		}
+	}
+	ct := http.DetectContentType(data)
+	if strings.HasPrefix(ct, "text/") {
+		return "text/plain; charset=utf-8"
+	}
+	return "application/octet-stream"
+}
+
+// isNotFound checks if the error indicates a 404 / not-found response
+// by inspecting the structured transport.Error from go-containerregistry.
 func isNotFound(err error) bool {
-	return strings.Contains(err.Error(), "NOT_FOUND") ||
-		strings.Contains(err.Error(), "MANIFEST_UNKNOWN") ||
-		strings.Contains(err.Error(), "404")
+	var terr *transport.Error
+	if !errors.As(err, &terr) {
+		return false
+	}
+	if terr.StatusCode == http.StatusNotFound {
+		return true
+	}
+	for _, d := range terr.Errors {
+		if d.Code == transport.ManifestUnknownErrorCode || d.Code == transport.NameUnknownErrorCode {
+			return true
+		}
+	}
+	return false
 }
