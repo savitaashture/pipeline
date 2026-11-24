@@ -1780,7 +1780,7 @@ _Appears in:_
 | `results` _[TaskRunResult](#taskrunresult) array_ | Results are the list of results written out by the task's containers |  | Optional: \{\} <br /> |
 | `artifacts` _[Artifacts](#artifacts)_ | Artifacts are the list of artifacts written out by the task's containers |  | Optional: \{\} <br /> |
 | `sidecars` _[SidecarState](#sidecarstate) array_ | The list has one entry per sidecar in the manifest. Each entry is<br />represents the imageid of the corresponding sidecar. |  |  |
-| `taskSpec` _[TaskSpec](#taskspec)_ | TaskSpec contains the Task spec used to instantiate the run, without documentation-only descriptions by default.<br />Descriptions are retained when keep-status-spec-descriptions is true at snapshot creation. |  |  |
+| `taskSpec` _[TaskSpec](#taskspec)_ | TaskSpec contains the Task spec used to instantiate the run, without documentation-only descriptions by default.<br />Descriptions are retained when keep-status-spec-descriptions is true at snapshot creation.<br />See Task.spec (API version: tekton.dev/v1) |  | Schemaless: \{\} <br /> |
 | `provenance` _[Provenance](#provenance)_ | Provenance contains some key authenticated metadata about how a software artifact was built (what sources, what inputs/outputs, etc.). |  | Optional: \{\} <br /> |
 | `spanContext` _object (keys:string, values:string)_ | SpanContext contains tracing span context fields |  |  |
 
@@ -1808,7 +1808,7 @@ _Appears in:_
 | `results` _[TaskRunResult](#taskrunresult) array_ | Results are the list of results written out by the task's containers |  | Optional: \{\} <br /> |
 | `artifacts` _[Artifacts](#artifacts)_ | Artifacts are the list of artifacts written out by the task's containers |  | Optional: \{\} <br /> |
 | `sidecars` _[SidecarState](#sidecarstate) array_ | The list has one entry per sidecar in the manifest. Each entry is<br />represents the imageid of the corresponding sidecar. |  |  |
-| `taskSpec` _[TaskSpec](#taskspec)_ | TaskSpec contains the Task spec used to instantiate the run, without documentation-only descriptions by default.<br />Descriptions are retained when keep-status-spec-descriptions is true at snapshot creation. |  |  |
+| `taskSpec` _[TaskSpec](#taskspec)_ | TaskSpec contains the Task spec used to instantiate the run, without documentation-only descriptions by default.<br />Descriptions are retained when keep-status-spec-descriptions is true at snapshot creation.<br />See Task.spec (API version: tekton.dev/v1) |  | Schemaless: \{\} <br /> |
 | `provenance` _[Provenance](#provenance)_ | Provenance contains some key authenticated metadata about how a software artifact was built (what sources, what inputs/outputs, etc.). |  | Optional: \{\} <br /> |
 | `spanContext` _object (keys:string, values:string)_ | SpanContext contains tracing span context fields |  |  |
 
