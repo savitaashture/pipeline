@@ -74,7 +74,14 @@ type ArtifactOutput struct {
 //
 // provider may be nil when storage is disabled. budget may be nil, in which
 // case only the per-artifact threshold is checked.
-func UploadArtifact(ctx context.Context, output ArtifactOutput, provider artifactstorage.Provider, inlineThreshold int, budget *InlineBudgetTracker) (*pipelinev1.ArtifactValue, error) {
+// ArtifactMetadata carries provenance metadata for OCI manifest annotations.
+type ArtifactMetadata struct {
+	TaskRun     string
+	PipelineRun string
+	Namespace   string
+}
+
+func UploadArtifact(ctx context.Context, output ArtifactOutput, provider artifactstorage.Provider, inlineThreshold int, budget *InlineBudgetTracker, metadata ArtifactMetadata) (*pipelinev1.ArtifactValue, error) {
 	if output.Type == pipelinev1.ArtifactTypeReference {
 		return readReferenceArtifact(output)
 	}
@@ -132,6 +139,9 @@ func UploadArtifact(ctx context.Context, output ArtifactOutput, provider artifac
 		ArtifactName: output.Name,
 		MediaType:    output.MediaType,
 		Repository:   output.Repository,
+		TaskRun:      metadata.TaskRun,
+		PipelineRun:  metadata.PipelineRun,
+		Namespace:    metadata.Namespace,
 	}, bytes.NewReader(dataBytes))
 	if err != nil {
 		return nil, fmt.Errorf("storing artifact %q: %w", output.Name, err)

@@ -36,7 +36,7 @@ func TestArtifactEntrypointArgs(t *testing.T) {
 	repository := "registry:5000/artifacts"
 	insecure := true
 
-	args := artifactEntrypointArgs(taskSpec, "oci", repository, insecure, 0)
+	args := artifactEntrypointArgs(taskSpec, "oci", repository, insecure, 0, ArtifactProvenance{})
 
 	// Should contain -artifact_outputs flag with correct JSON
 	found := false
@@ -78,7 +78,7 @@ func TestArtifactEntrypointArgs(t *testing.T) {
 
 func TestArtifactEntrypointArgs_NoArtifacts(t *testing.T) {
 	taskSpec := &v1.TaskSpec{}
-	args := artifactEntrypointArgs(taskSpec, "oci", "registry:5000/artifacts", false, 0)
+	args := artifactEntrypointArgs(taskSpec, "oci", "registry:5000/artifacts", false, 0, ArtifactProvenance{})
 	if len(args) != 0 {
 		t.Errorf("expected empty args for task without artifacts, got %v", args)
 	}
@@ -93,7 +93,7 @@ func TestArtifactEntrypointArgs_InlineThreshold(t *testing.T) {
 		},
 	}
 
-	args := artifactEntrypointArgs(taskSpec, "oci", "registry:5000/artifacts", false, 512)
+	args := artifactEntrypointArgs(taskSpec, "oci", "registry:5000/artifacts", false, 512, ArtifactProvenance{})
 	if !contains(args, "-artifact_inline_threshold") {
 		t.Error("expected -artifact_inline_threshold flag")
 	}
@@ -101,7 +101,7 @@ func TestArtifactEntrypointArgs_InlineThreshold(t *testing.T) {
 		t.Error("expected threshold value 512 in args")
 	}
 
-	argsNoThreshold := artifactEntrypointArgs(taskSpec, "oci", "registry:5000/artifacts", false, 0)
+	argsNoThreshold := artifactEntrypointArgs(taskSpec, "oci", "registry:5000/artifacts", false, 0, ArtifactProvenance{})
 	if contains(argsNoThreshold, "-artifact_inline_threshold") {
 		t.Error("should not emit -artifact_inline_threshold when threshold is 0")
 	}

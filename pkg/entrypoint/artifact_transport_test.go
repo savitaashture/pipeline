@@ -67,7 +67,7 @@ func TestUploadAndDownloadArtifact(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	av, err := UploadArtifact(ctx, output, provider, 0, nil)
+	av, err := UploadArtifact(ctx, output, provider, 0, nil, ArtifactMetadata{})
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -133,7 +133,7 @@ func TestUploadArtifact_EmptyDir(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	av, err := UploadArtifact(ctx, output, provider, 0, nil)
+	av, err := UploadArtifact(ctx, output, provider, 0, nil, ArtifactMetadata{})
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -189,7 +189,7 @@ func TestUploadArtifact_ReferenceType(t *testing.T) {
 		Path: uriFile,
 	}
 
-	av, err := UploadArtifact(context.Background(), output, nil, 0, nil)
+	av, err := UploadArtifact(context.Background(), output, nil, 0, nil, ArtifactMetadata{})
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -215,7 +215,7 @@ func TestUploadArtifact_ReferenceType_NoDigest(t *testing.T) {
 		Path: uriFile,
 	}
 
-	if _, err := UploadArtifact(context.Background(), output, nil, 0, nil); err == nil {
+	if _, err := UploadArtifact(context.Background(), output, nil, 0, nil, ArtifactMetadata{}); err == nil {
 		t.Fatal("expected error for reference artifact missing a digest")
 	}
 }
@@ -232,7 +232,7 @@ func TestUploadArtifact_ContentType_NoProvider_DigestOnly(t *testing.T) {
 		Path: srcDir,
 	}
 
-	av, err := UploadArtifact(context.Background(), output, nil, 0, nil)
+	av, err := UploadArtifact(context.Background(), output, nil, 0, nil, ArtifactMetadata{})
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -256,7 +256,7 @@ func TestUploadArtifact_InlineSmallContent(t *testing.T) {
 		Path: srcDir,
 	}
 
-	av, err := UploadArtifact(context.Background(), output, nil, 4096, nil)
+	av, err := UploadArtifact(context.Background(), output, nil, 4096, nil, ArtifactMetadata{})
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -289,7 +289,7 @@ func TestUploadArtifact_InlineExceedsThreshold_NoProvider_Error(t *testing.T) {
 		Path: srcDir,
 	}
 
-	_, err := UploadArtifact(context.Background(), output, nil, 100, nil)
+	_, err := UploadArtifact(context.Background(), output, nil, 100, nil, ArtifactMetadata{})
 	if err == nil {
 		t.Fatal("expected error when content exceeds inline threshold and no provider is configured")
 	}
@@ -317,7 +317,7 @@ func TestUploadArtifact_InlineExceedsThreshold_WithProvider_Uploads(t *testing.T
 		Repository: fmt.Sprintf("%s/artifacts/big", registryHost),
 	}
 
-	av, err := UploadArtifact(context.Background(), output, provider, 100, nil)
+	av, err := UploadArtifact(context.Background(), output, provider, 100, nil, ArtifactMetadata{})
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -358,7 +358,7 @@ func TestUploadArtifact_InlineBudgetExhausted_FallsBackToProvider(t *testing.T) 
 	budget := NewInlineBudgetTracker(budgetFile, 10)
 	budget.TryConsume(10)
 
-	av, err := UploadArtifact(context.Background(), output, provider, 4096, budget)
+	av, err := UploadArtifact(context.Background(), output, provider, 4096, budget, ArtifactMetadata{})
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -386,7 +386,7 @@ func TestUploadArtifact_InlineBudgetExhausted_NoProvider_Error(t *testing.T) {
 	budget := NewInlineBudgetTracker(budgetFile, 10)
 	budget.TryConsume(10)
 
-	_, err := UploadArtifact(context.Background(), output, nil, 4096, budget)
+	_, err := UploadArtifact(context.Background(), output, nil, 4096, budget, ArtifactMetadata{})
 	if err == nil {
 		t.Fatal("expected error when budget is exhausted and no provider is configured")
 	}
@@ -411,7 +411,7 @@ func TestUploadArtifact_InlineBudgetAllowsInline(t *testing.T) {
 	budgetFile := filepath.Join(t.TempDir(), "budget")
 	budget := NewInlineBudgetTracker(budgetFile, 2048)
 
-	av, err := UploadArtifact(context.Background(), output, nil, 4096, budget)
+	av, err := UploadArtifact(context.Background(), output, nil, 4096, budget, ArtifactMetadata{})
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -443,7 +443,7 @@ func TestDownloadArtifact_OCI_RoundTrip(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	av, err := UploadArtifact(ctx, output, provider, 0, nil)
+	av, err := UploadArtifact(ctx, output, provider, 0, nil, ArtifactMetadata{})
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}
@@ -711,7 +711,7 @@ func TestUploadAndDownloadArtifact_WithSymlinks(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	av, err := UploadArtifact(ctx, output, provider, 0, nil)
+	av, err := UploadArtifact(ctx, output, provider, 0, nil, ArtifactMetadata{})
 	if err != nil {
 		t.Fatalf("UploadArtifact() error = %v", err)
 	}

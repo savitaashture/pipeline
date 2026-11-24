@@ -192,6 +192,12 @@ type Entrypointer struct {
 	// ArtifactProvider is the storage backend for uploading/downloading content
 	// artifacts. May be nil when artifact storage is disabled.
 	ArtifactProvider artifactstorage.Provider
+	// ArtifactTaskRun is the TaskRun name.
+	ArtifactTaskRun string
+	// ArtifactPipelineRun is the PipelineRun name (empty for standalone TaskRuns).
+	ArtifactPipelineRun string
+	// ArtifactNamespace is the namespace where the workload runs.
+	ArtifactNamespace string
 }
 
 // Waiter encapsulates waiting for files to exist.
@@ -340,13 +346,18 @@ func (e Entrypointer) Go() error {
 					budget = NewInlineBudgetTracker(config.InlineBudgetFile, config.PodInlineBudget)
 				}
 				uploadCtx := context.Background()
+				meta := ArtifactMetadata{
+					TaskRun:     e.ArtifactTaskRun,
+					PipelineRun: e.ArtifactPipelineRun,
+					Namespace:   e.ArtifactNamespace,
+				}
 				for _, ao := range e.ArtifactOutputs {
 					if ao.Type != "reference" {
 						if countFiles(ao.Path) <= preStepFileCounts[ao.Name] {
 							continue
 						}
 					}
-					av, uploadErr := UploadArtifact(uploadCtx, ao, e.ArtifactProvider, e.ArtifactInlineThreshold, budget)
+					av, uploadErr := UploadArtifact(uploadCtx, ao, e.ArtifactProvider, e.ArtifactInlineThreshold, budget, meta)
 					if uploadErr != nil {
 						err = fmt.Errorf("uploading artifact %s: %w", ao.Name, uploadErr)
 						slog.Error("Error uploading artifact", slog.String("name", ao.Name), slog.Any("error", uploadErr))
