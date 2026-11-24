@@ -253,7 +253,14 @@ func (b *Builder) Build(ctx context.Context, taskRun *v1.TaskRun, taskSpec v1.Ta
 			insecure = artifactStorageCfg.Insecure
 			inlineThreshold = artifactStorageCfg.InlineThreshold
 		}
-		artifactArgs := artifactEntrypointArgs(&taskSpec, backend, ociRepository, insecure, inlineThreshold)
+		provenance := ArtifactProvenance{
+			TaskRun:   taskRun.Name,
+			Namespace: taskRun.Namespace,
+		}
+		if prName, ok := taskRun.Labels[pipeline.PipelineRunLabelKey]; ok {
+			provenance.PipelineRun = prName
+		}
+		artifactArgs := artifactEntrypointArgs(&taskSpec, backend, ociRepository, insecure, inlineThreshold, provenance)
 
 		var dockerCfgJSON []byte
 		if artifactStorageCfg != nil && artifactStorageCfg.Enabled && artifactStorageCfg.OCICredentialsSecret != "" {

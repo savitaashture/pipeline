@@ -25,9 +25,16 @@ import (
 	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
+// ArtifactProvenance carries TaskRun/PipelineRun identifiers for OCI manifest annotations.
+type ArtifactProvenance struct {
+	TaskRun     string
+	PipelineRun string
+	Namespace   string
+}
+
 // artifactEntrypointArgs generates entrypoint CLI args for artifact transport
 // based on the TaskSpec's artifact declarations and the artifact storage config.
-func artifactEntrypointArgs(taskSpec *v1.TaskSpec, backend string, ociRepository string, insecure bool, inlineThreshold int) []string {
+func artifactEntrypointArgs(taskSpec *v1.TaskSpec, backend string, ociRepository string, insecure bool, inlineThreshold int, provenance ArtifactProvenance) []string {
 	if taskSpec == nil || taskSpec.Artifacts == nil {
 		return nil
 	}
@@ -104,6 +111,16 @@ func artifactEntrypointArgs(taskSpec *v1.TaskSpec, backend string, ociRepository
 
 	if inlineThreshold > 0 {
 		args = append(args, "-artifact_inline_threshold", fmt.Sprintf("%d", inlineThreshold))
+	}
+
+	if provenance.TaskRun != "" {
+		args = append(args, "-artifact_taskrun", provenance.TaskRun)
+	}
+	if provenance.PipelineRun != "" {
+		args = append(args, "-artifact_pipelinerun", provenance.PipelineRun)
+	}
+	if provenance.Namespace != "" {
+		args = append(args, "-artifact_namespace", provenance.Namespace)
 	}
 
 	return args

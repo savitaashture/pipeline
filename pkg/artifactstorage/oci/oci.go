@@ -21,16 +21,19 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/static"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
@@ -104,6 +107,8 @@ func (p *OCIProvider) buildRemoteOpts(ctx context.Context) []remote.Option {
 	return opts
 }
 
+const artifactConfigMediaType = "application/vnd.tekton.artifact.config.v1+json"
+
 func (p *OCIProvider) Store(ctx context.Context, opts artifactstorage.StoreOptions, content io.Reader) (*pipelinev1.ArtifactStorageRef, error) {
 	data, err := io.ReadAll(content)
 	if err != nil {
@@ -128,6 +133,54 @@ func (p *OCIProvider) Store(ctx context.Context, opts artifactstorage.StoreOptio
 	if err != nil {
 		return nil, fmt.Errorf("creating image with layer: %w", err)
 	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	cfgBlob := struct {
+		Created  string `json:"created"`
+		Artifact struct {
+			Name        string `json:"name"`
+			TaskRun     string `json:"taskrun,omitempty"`
+			PipelineRun string `json:"pipelinerun,omitempty"`
+			Namespace   string `json:"namespace,omitempty"`
+			ContentType string `json:"contentType,omitempty"`
+		} `json:"artifact"`
+	}{
+		Created: now,
+	}
+	cfgBlob.Artifact.Name = opts.ArtifactName
+	cfgBlob.Artifact.ContentType = string(layerMediaType)
+
+	annotations := map[string]string{
+		"dev.tekton.artifact/name":    opts.ArtifactName,
+		"dev.tekton.artifact/created": now,
+	}
+
+	if opts.TaskRun != "" {
+		cfgBlob.Artifact.TaskRun = opts.TaskRun
+		annotations["dev.tekton.artifact/taskrun"] = opts.TaskRun
+	}
+	if opts.PipelineRun != "" {
+		cfgBlob.Artifact.PipelineRun = opts.PipelineRun
+		annotations["dev.tekton.artifact/pipelinerun"] = opts.PipelineRun
+	}
+	if opts.Namespace != "" {
+		cfgBlob.Artifact.Namespace = opts.Namespace
+		annotations["dev.tekton.artifact/namespace"] = opts.Namespace
+	}
+
+	cfgJSON, err := json.Marshal(cfgBlob)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling config blob: %w", err)
+	}
+
+	img, err = mutate.AppendLayers(img, static.NewLayer(cfgJSON, artifactConfigMediaType))
+	if err != nil {
+		return nil, fmt.Errorf("appending config layer: %w", err)
+	}
+	img = mutate.ConfigMediaType(img, artifactConfigMediaType)
+
+	img = mutate.Annotations(img, annotations).(v1.Image)
 
 	repo := opts.Repository
 	if repo == "" {
