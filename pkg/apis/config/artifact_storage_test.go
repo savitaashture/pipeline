@@ -475,8 +475,9 @@ func TestResolveArtifactStorage(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name: "nil base returns nil",
+			name: "nil base returns empty",
 			base: nil,
+			want: &ArtifactStorage{},
 		},
 		{
 			name: "empty overrides and annotations return copy of base",

@@ -242,6 +242,12 @@ func ValidatePipelineTaskArtifactBindings(ctx context.Context, bindings *Pipelin
 	}
 
 	var errs *apis.FieldError
+
+	cfg := config.FromContextOrDefaults(ctx)
+	if cfg == nil || cfg.FeatureFlags == nil || !cfg.FeatureFlags.EnableArtifacts {
+		return apis.ErrGeneric(fmt.Sprintf("feature flag %s should be set to true to use artifacts feature", config.EnableArtifacts), "")
+	}
+
 	errs = errs.Also(validateArtifactStorageConfig(ctx))
 	for i, binding := range bindings.Inputs {
 		if binding.Name == "" {
@@ -252,9 +258,9 @@ func ValidatePipelineTaskArtifactBindings(ctx context.Context, bindings *Pipelin
 		} else {
 			parts := strings.Split(binding.From, ".")
 			switch {
-			case len(parts) == 4 && parts[0] == "tasks" && parts[2] == "outputs":
+			case len(parts) == 4 && parts[0] == PipelineTasks && parts[2] == PipelineTaskOutputs:
 				// tasks.<taskName>.outputs.<artifactName>
-			case len(parts) == 3 && parts[0] == "artifacts" && parts[1] == "inputs":
+			case len(parts) == 3 && parts[0] == PipelineArtifacts && parts[1] == PipelineTaskInputs:
 				// artifacts.inputs.<name> — PipelineRun-provided input
 			default:
 				errs = errs.Also(&apis.FieldError{
@@ -342,14 +348,16 @@ func validatePipelineArtifacts(ctx context.Context, artifacts *PipelineArtifactD
 		}
 	}
 
-	allTasks := append(tasks, finally...)
+	allTasks := make([]PipelineTask, 0, len(tasks)+len(finally))
+	allTasks = append(allTasks, tasks...)
+	allTasks = append(allTasks, finally...)
 	for _, pt := range allTasks {
 		if pt.Artifacts == nil {
 			continue
 		}
 		for i, binding := range pt.Artifacts.Inputs {
 			parts := strings.Split(binding.From, ".")
-			if len(parts) == 3 && parts[0] == "artifacts" && parts[1] == "inputs" {
+			if len(parts) == 3 && parts[0] == PipelineArtifacts && parts[1] == PipelineTaskInputs {
 				if !inputNames.Has(parts[2]) {
 					errs = errs.Also(apis.ErrInvalidValue(
 						fmt.Sprintf("referencing undeclared pipeline artifact input %q", parts[2]),

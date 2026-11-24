@@ -351,8 +351,8 @@ type TaskRunStatusFields struct {
 	Sidecars []SidecarState `json:"sidecars,omitempty"`
 
 	// TaskSpec contains the Task spec used to instantiate the run, without documentation-only descriptions by default.
-        // Descriptions are retained when keep-status-spec-descriptions is true at snapshot creation.
-        // See Task.spec (API version: tekton.dev/v1)
+	// Descriptions are retained when keep-status-spec-descriptions is true at snapshot creation.
+	// See Task.spec (API version: tekton.dev/v1)
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Schemaless
 	TaskSpec *TaskSpec `json:"taskSpec,omitempty"`

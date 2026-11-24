@@ -305,10 +305,10 @@ func applyAnnotationOverrides(base *ArtifactStorage, annotations map[string]stri
 // The base is deep-copied before mutation so the caller's original is
 // not modified.
 func ResolveArtifactStorage(base *ArtifactStorage, namespaceOverrides map[string]string, annotations map[string]string) (*ArtifactStorage, error) {
-	resolved := base.DeepCopy()
-	if resolved == nil {
-		return nil, nil
+	if base == nil {
+		return &ArtifactStorage{}, nil
 	}
+	resolved := base.DeepCopy()
 
 	if len(namespaceOverrides) > 0 {
 		if err := ApplyOverridesFromMap(resolved, namespaceOverrides); err != nil {

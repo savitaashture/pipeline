@@ -163,7 +163,7 @@ func (s *Step) Validate(ctx context.Context) (errs *apis.FieldError) {
 		if s.Artifacts != nil {
 			errs = errs.Also(&apis.FieldError{
 				Message: "artifacts cannot be used with Ref",
-				Paths:   []string{"artifacts"},
+				Paths:   []string{"artifacts"}, //nolint:goconst
 			})
 		}
 	} else {
