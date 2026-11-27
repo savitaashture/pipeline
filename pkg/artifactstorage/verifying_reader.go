@@ -25,7 +25,7 @@ import (
 	"io"
 	"strings"
 
-	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1/types"
 )
 
 // VerifyingReader wraps an io.ReadCloser and verifies the SHA-256 digest of

@@ -34,6 +34,30 @@ import (
 // stepArtifactValuePattern matches $(steps.<step>.artifacts.<name>)
 var stepArtifactValuePattern = regexp.MustCompile(`^\$\(steps\.([^.]+)\.artifacts\.([^.)]+)\)$`)
 
+var artifactNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
+
+// validateArtifactName validates whether the name is safe to use.
+// It rejects empty names, path traversal sequences, path separators,
+// and names that don't match the allowed character set.
+func validateArtifactName(name, fieldPath string) *apis.FieldError {
+	if name == "" {
+		return apis.ErrMissingField(fieldPath)
+	}
+	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		return apis.ErrInvalidValue(
+			fmt.Sprintf("artifact name %q must not contain path separators", name), fieldPath)
+	}
+	if name == "." || name == ".." || strings.Contains(name, "..") {
+		return apis.ErrInvalidValue(
+			fmt.Sprintf("artifact name %q must not contain path traversal sequences", name), fieldPath)
+	}
+	if !artifactNamePattern.MatchString(name) {
+		return apis.ErrInvalidValue(
+			fmt.Sprintf("artifact name %q must start with an alphanumeric character and contain only alphanumerics, hyphens, underscores, or dots", name), fieldPath)
+	}
+	return nil
+}
+
 // resolveArtifactStorageForValidation resolves the 4-level artifact storage
 // hierarchy and returns a context with the resolved config. When a KubeClient
 // is available (webhook admission), it reads the namespace ConfigMap. The
@@ -42,6 +66,10 @@ var stepArtifactValuePattern = regexp.MustCompile(`^\$\(steps\.([^.]+)\.artifact
 func resolveArtifactStorageForValidation(ctx context.Context, namespace string, annotations map[string]string) context.Context {
 	cfg := config.FromContextOrDefaults(ctx)
 	if cfg == nil || cfg.ArtifactStorage == nil {
+		return ctx
+	}
+
+	if cfg.FeatureFlags == nil || !cfg.FeatureFlags.EnableArtifacts {
 		return ctx
 	}
 
@@ -128,8 +156,8 @@ func ValidateArtifactDeclarations(ctx context.Context, decls *ArtifactDeclaratio
 	// Validate inputs
 	inputNames := map[string]bool{}
 	for i, input := range decls.Inputs {
-		if input.Name == "" {
-			errs = errs.Also(apis.ErrMissingField(fmt.Sprintf("inputs[%d].name", i)))
+		if err := validateArtifactName(input.Name, fmt.Sprintf("inputs[%d].name", i)); err != nil {
+			errs = errs.Also(err)
 		} else if inputNames[input.Name] {
 			errs = errs.Also(&apis.FieldError{
 				Message: fmt.Sprintf("duplicate artifact input name %q", input.Name),
@@ -160,8 +188,8 @@ func ValidateArtifactDeclarations(ctx context.Context, decls *ArtifactDeclaratio
 	// Validate outputs
 	outputNames := map[string]bool{}
 	for i, output := range decls.Outputs {
-		if output.Name == "" {
-			errs = errs.Also(apis.ErrMissingField(fmt.Sprintf("outputs[%d].name", i)))
+		if err := validateArtifactName(output.Name, fmt.Sprintf("outputs[%d].name", i)); err != nil {
+			errs = errs.Also(err)
 		} else if outputNames[output.Name] {
 			errs = errs.Also(&apis.FieldError{
 				Message: fmt.Sprintf("duplicate artifact output name %q", output.Name),
@@ -203,8 +231,8 @@ func ValidateStepArtifacts(ctx context.Context, artifacts *StepArtifacts) *apis.
 	var errs *apis.FieldError
 	outputNames := map[string]bool{}
 	for i, output := range artifacts.Outputs {
-		if output.Name == "" {
-			errs = errs.Also(apis.ErrMissingField(fmt.Sprintf("outputs[%d].name", i)))
+		if err := validateArtifactName(output.Name, fmt.Sprintf("outputs[%d].name", i)); err != nil {
+			errs = errs.Also(err)
 		} else if outputNames[output.Name] {
 			errs = errs.Also(&apis.FieldError{
 				Message: fmt.Sprintf("duplicate artifact output name %q", output.Name),
@@ -250,8 +278,8 @@ func ValidatePipelineTaskArtifactBindings(ctx context.Context, bindings *Pipelin
 
 	errs = errs.Also(validateArtifactStorageConfig(ctx))
 	for i, binding := range bindings.Inputs {
-		if binding.Name == "" {
-			errs = errs.Also(apis.ErrMissingField(fmt.Sprintf("inputs[%d].name", i)))
+		if err := validateArtifactName(binding.Name, fmt.Sprintf("inputs[%d].name", i)); err != nil {
+			errs = errs.Also(err)
 		}
 		if binding.From == "" {
 			errs = errs.Also(apis.ErrMissingField(fmt.Sprintf("inputs[%d].from", i)))
@@ -284,8 +312,8 @@ func validatePipelineArtifacts(ctx context.Context, artifacts *PipelineArtifactD
 	}
 	inputNames := sets.NewString()
 	for idx, in := range artifacts.Inputs {
-		if in.Name == "" {
-			errs = errs.Also(apis.ErrMissingField("name").ViaFieldIndex("inputs", idx).ViaField("artifacts"))
+		if err := validateArtifactName(in.Name, fmt.Sprintf("artifacts.inputs[%d].name", idx)); err != nil {
+			errs = errs.Also(err)
 		}
 		if inputNames.Has(in.Name) {
 			errs = errs.Also(apis.ErrMultipleOneOf("name").ViaFieldIndex("inputs", idx).ViaField("artifacts"))
@@ -316,8 +344,8 @@ func validatePipelineArtifacts(ctx context.Context, artifacts *PipelineArtifactD
 
 	outputNames := sets.NewString()
 	for idx, out := range artifacts.Outputs {
-		if out.Name == "" {
-			errs = errs.Also(apis.ErrMissingField("name").ViaFieldIndex(PipelineTaskOutputs, idx).ViaField("artifacts"))
+		if err := validateArtifactName(out.Name, fmt.Sprintf("artifacts.outputs[%d].name", idx)); err != nil {
+			errs = errs.Also(err)
 		}
 		if outputNames.Has(out.Name) {
 			errs = errs.Also(apis.ErrMultipleOneOf("name").ViaFieldIndex(PipelineTaskOutputs, idx).ViaField("artifacts"))

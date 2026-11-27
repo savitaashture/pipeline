@@ -18,6 +18,7 @@ package subcommands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -25,7 +26,6 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/tektoncd/pipeline/pkg/apis/pipeline"
 	"github.com/tektoncd/pipeline/pkg/artifactstorage"
 	ocibackend "github.com/tektoncd/pipeline/pkg/artifactstorage/oci"
 	"github.com/tektoncd/pipeline/pkg/entrypoint"
@@ -34,10 +34,14 @@ import (
 // ArtifactFetchCommand is the name of the artifact-fetch subcommand.
 const ArtifactFetchCommand = "artifact-fetch"
 
+// ArtifactsFetchedMarker is the marker file written by the artifact-fetch
+// init container after all content input artifacts have been downloaded.
+// Steps check for this file to skip redundant downloads.
+var ArtifactsFetchedMarker = "/tekton/artifacts/.fetched"
+
 // ArtifactsFetchedMarker is the file the init container writes after
 // successfully downloading all content input artifacts. Steps check for
 // this file to avoid redundant downloads.
-var ArtifactsFetchedMarker = pipeline.ArtifactsFetchedFile
 
 // artifactFetch downloads all content input artifacts into the shared
 // /tekton/artifacts volume. It is run as an init container so that all
@@ -52,7 +56,7 @@ var ArtifactsFetchedMarker = pipeline.ArtifactsFetchedFile
 //	--docker-config=<json> Docker config JSON for registry auth
 func artifactFetch(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("artifact-fetch requires at least 1 argument: <inputs-json>")
+		return errors.New("artifact-fetch requires at least 1 argument: <inputs-json>")
 	}
 
 	inputsJSON := args[0]
@@ -121,7 +125,7 @@ func artifactFetch(args []string) error {
 	if err := os.MkdirAll(filepath.Dir(ArtifactsFetchedMarker), 0o755); err != nil {
 		return fmt.Errorf("creating marker directory: %w", err)
 	}
-	if err := os.WriteFile(ArtifactsFetchedMarker, []byte(fmt.Sprintf("fetched %d artifacts\n", downloaded)), 0o644); err != nil {
+	if err := os.WriteFile(ArtifactsFetchedMarker, []byte(fmt.Sprintf("fetched %d artifacts\n", downloaded)), 0o600); err != nil {
 		return fmt.Errorf("writing fetched marker: %w", err)
 	}
 

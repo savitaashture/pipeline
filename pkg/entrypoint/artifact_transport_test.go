@@ -17,11 +17,14 @@ limitations under the License.
 package entrypoint
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
-	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -62,7 +65,7 @@ func TestUploadAndDownloadArtifact(t *testing.T) {
 	output := ArtifactOutput{
 		Name:       "test-results",
 		Path:       srcDir,
-		Repository: fmt.Sprintf("%s/artifacts/test-results", registryHost),
+		Repository: registryHost + "/artifacts/test-results",
 		MediaType:  "application/vnd.tekton.artifact.test.v1+tar.gz",
 	}
 
@@ -128,7 +131,7 @@ func TestUploadArtifact_EmptyDir(t *testing.T) {
 	output := ArtifactOutput{
 		Name:       "empty",
 		Path:       srcDir,
-		Repository: fmt.Sprintf("%s/artifacts/empty", registryHost),
+		Repository: registryHost + "/artifacts/empty",
 		MediaType:  "application/vnd.tekton.artifact.v1+tar.gz",
 	}
 
@@ -314,7 +317,7 @@ func TestUploadArtifact_InlineExceedsThreshold_WithProvider_Uploads(t *testing.T
 		Name:       "big",
 		Type:       "content",
 		Path:       srcDir,
-		Repository: fmt.Sprintf("%s/artifacts/big", registryHost),
+		Repository: registryHost + "/artifacts/big",
 	}
 
 	av, err := UploadArtifact(context.Background(), output, provider, 100, nil, ArtifactMetadata{})
@@ -351,7 +354,7 @@ func TestUploadArtifact_InlineBudgetExhausted_FallsBackToProvider(t *testing.T) 
 		Name:       "small",
 		Type:       "content",
 		Path:       srcDir,
-		Repository: fmt.Sprintf("%s/artifacts/small", registryHost),
+		Repository: registryHost + "/artifacts/small",
 	}
 
 	budgetFile := filepath.Join(t.TempDir(), "budget")
@@ -390,9 +393,9 @@ func TestUploadArtifact_InlineBudgetExhausted_NoProvider_Error(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when budget is exhausted and no provider is configured")
 	}
-	var budgetErr *ErrInlineBudgetExceeded
+	var budgetErr *InlineBudgetExceededError
 	if !errors.As(err, &budgetErr) {
-		t.Errorf("expected ErrInlineBudgetExceeded, got %T: %v", err, err)
+		t.Errorf("expected InlineBudgetExceededError, got %T: %v", err, err)
 	}
 }
 
@@ -439,7 +442,7 @@ func TestDownloadArtifact_OCI_RoundTrip(t *testing.T) {
 		Name:       "verified",
 		Type:       "content",
 		Path:       srcDir,
-		Repository: fmt.Sprintf("%s/artifacts/verified", registryHost),
+		Repository: registryHost + "/artifacts/verified",
 	}
 
 	ctx := context.Background()
@@ -482,7 +485,7 @@ func TestDownloadArtifact_Inline_DigestVerification(t *testing.T) {
 
 	h := sha256.New()
 	h.Write(dataBytes)
-	correctDigest := fmt.Sprintf("%x", h.Sum(nil))
+	correctDigest := hex.EncodeToString(h.Sum(nil))
 
 	t.Run("correct digest", func(t *testing.T) {
 		dstDir := t.TempDir()
@@ -516,9 +519,9 @@ func TestDownloadArtifact_Inline_DigestVerification(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for wrong digest")
 		}
-		var mismatch *ErrDigestMismatch
+		var mismatch *DigestMismatchError
 		if !errors.As(err, &mismatch) {
-			t.Fatalf("expected ErrDigestMismatch, got %T: %v", err, err)
+			t.Fatalf("expected DigestMismatchError, got %T: %v", err, err)
 		}
 	})
 
@@ -594,36 +597,27 @@ func TestCreateTarGzBuffer_WithSymlinks(t *testing.T) {
 		t.Errorf("nested.txt content = %q, want %q", string(nested), "nested")
 	}
 
-	// Verify symlink to file
-	linkTarget, err := os.Readlink(filepath.Join(dstDir, "link-to-file"))
+	// Symlinks are resolved to regular files during tar creation.
+	// Verify link-to-file is a regular file with the right content.
+	linkInfo, err := os.Lstat(filepath.Join(dstDir, "link-to-file"))
 	if err != nil {
-		t.Fatalf("failed to readlink link-to-file: %v", err)
+		t.Fatalf("failed to stat link-to-file: %v", err)
 	}
-	if linkTarget != "file.txt" {
-		t.Errorf("link-to-file target = %q, want %q", linkTarget, "file.txt")
+	if linkInfo.Mode()&os.ModeSymlink != 0 {
+		t.Error("link-to-file should be a regular file, not a symlink")
 	}
 	linkedContent, err := os.ReadFile(filepath.Join(dstDir, "link-to-file"))
 	if err != nil {
-		t.Fatalf("failed to read through link-to-file: %v", err)
+		t.Fatalf("failed to read link-to-file: %v", err)
 	}
 	if string(linkedContent) != "content" {
 		t.Errorf("link-to-file content = %q, want %q", string(linkedContent), "content")
 	}
 
-	// Verify symlink to directory
-	linkTarget, err = os.Readlink(filepath.Join(dstDir, "link-to-dir"))
-	if err != nil {
-		t.Fatalf("failed to readlink link-to-dir: %v", err)
-	}
-	if linkTarget != "subdir" {
-		t.Errorf("link-to-dir target = %q, want %q", linkTarget, "subdir")
-	}
-	nestedViaLink, err := os.ReadFile(filepath.Join(dstDir, "link-to-dir", "nested.txt"))
-	if err != nil {
-		t.Fatalf("failed to read through link-to-dir/nested.txt: %v", err)
-	}
-	if string(nestedViaLink) != "nested" {
-		t.Errorf("link-to-dir/nested.txt content = %q, want %q", string(nestedViaLink), "nested")
+	// Symlink to directory is skipped during creation (directory symlinks
+	// are not followed to avoid cycles), so link-to-dir won't exist.
+	if _, err := os.Lstat(filepath.Join(dstDir, "link-to-dir")); !os.IsNotExist(err) {
+		t.Error("link-to-dir should not exist — directory symlinks are skipped")
 	}
 }
 
@@ -658,19 +652,18 @@ func TestCreateTarGzBuffer_NestedSymlinks(t *testing.T) {
 		t.Fatalf("extractTarGz() error = %v", err)
 	}
 
-	// Verify the symlink was preserved
-	linkTarget, err := os.Readlink(filepath.Join(dstDir, ".agents", "skills"))
-	if err != nil {
-		t.Fatalf("failed to readlink .agents/skills: %v", err)
-	}
-	if linkTarget != "../skills" {
-		t.Errorf(".agents/skills target = %q, want %q", linkTarget, "../skills")
+	// Directory symlinks are skipped during tar creation (filepath.Walk
+	// does not follow them). The .agents/skills symlink won't exist in
+	// the extracted output, but the real skills/ directory content is
+	// preserved.
+	if _, err := os.Lstat(filepath.Join(dstDir, ".agents", "skills")); !os.IsNotExist(err) {
+		t.Error(".agents/skills symlink should not exist — directory symlinks are skipped")
 	}
 
-	// Verify the actual directory content is accessible through the symlink
-	content, err := os.ReadFile(filepath.Join(dstDir, ".agents", "skills", "SKILL.md"))
+	// The real directory content is still accessible at its original path.
+	content, err := os.ReadFile(filepath.Join(dstDir, "skills", "SKILL.md"))
 	if err != nil {
-		t.Fatalf("failed to read through symlink: %v", err)
+		t.Fatalf("failed to read skills/SKILL.md: %v", err)
 	}
 	if string(content) != "# Skill" {
 		t.Errorf("SKILL.md content = %q, want %q", string(content), "# Skill")
@@ -707,7 +700,7 @@ func TestUploadAndDownloadArtifact_WithSymlinks(t *testing.T) {
 	output := ArtifactOutput{
 		Name:       "source-with-symlinks",
 		Path:       srcDir,
-		Repository: fmt.Sprintf("%s/artifacts/source-symlinks", registryHost),
+		Repository: registryHost + "/artifacts/source-symlinks",
 	}
 
 	ctx := context.Background()
@@ -736,78 +729,61 @@ func TestUploadAndDownloadArtifact_WithSymlinks(t *testing.T) {
 		t.Errorf("main.go content = %q, want %q", string(content), "package main")
 	}
 
-	// Verify symlink to file is preserved
-	linkTarget, err := os.Readlink(filepath.Join(dstDir, "link-main"))
+	// Symlink to file is resolved to a regular file with the same content
+	linkInfo, err := os.Lstat(filepath.Join(dstDir, "link-main"))
 	if err != nil {
-		t.Fatalf("failed to readlink link-main: %v", err)
+		t.Fatalf("failed to stat link-main: %v", err)
 	}
-	if linkTarget != "main.go" {
-		t.Errorf("link-main target = %q, want %q", linkTarget, "main.go")
+	if linkInfo.Mode()&os.ModeSymlink != 0 {
+		t.Error("link-main should be a regular file, not a symlink")
+	}
+	linkContent, err := os.ReadFile(filepath.Join(dstDir, "link-main"))
+	if err != nil {
+		t.Fatalf("failed to read link-main: %v", err)
+	}
+	if string(linkContent) != "package main" {
+		t.Errorf("link-main content = %q, want %q", string(linkContent), "package main")
 	}
 
-	// Verify symlink to directory is preserved and content accessible
-	linkTarget, err = os.Readlink(filepath.Join(dstDir, "link-pkg"))
+	// Verify lib.go content is accessible under pkg/
+	libContent, err := os.ReadFile(filepath.Join(dstDir, "pkg", "lib.go"))
 	if err != nil {
-		t.Fatalf("failed to readlink link-pkg: %v", err)
-	}
-	if linkTarget != "pkg" {
-		t.Errorf("link-pkg target = %q, want %q", linkTarget, "pkg")
-	}
-	libContent, err := os.ReadFile(filepath.Join(dstDir, "link-pkg", "lib.go"))
-	if err != nil {
-		t.Fatalf("failed to read through link-pkg/lib.go: %v", err)
+		t.Fatalf("failed to read pkg/lib.go: %v", err)
 	}
 	if string(libContent) != "package pkg" {
 		t.Errorf("lib.go content = %q, want %q", string(libContent), "package pkg")
 	}
 }
 
-func TestExtractTarGz_RejectsAbsoluteSymlink(t *testing.T) {
-	srcDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(srcDir, "safe.txt"), []byte("safe"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink("/etc/passwd", filepath.Join(srcDir, "escape")); err != nil {
-		t.Fatal(err)
-	}
+func TestExtractTarGz_SkipsSymlinks(t *testing.T) {
+	// Craft a tar with a symlink entry manually since createTarGzBuffer
+	// resolves symlinks to regular files.
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
 
-	buf, err := createTarGzBuffer(srcDir)
-	if err != nil {
-		t.Fatalf("createTarGzBuffer() error = %v", err)
-	}
-
-	dstDir := t.TempDir()
-	err = extractTarGz(buf, dstDir)
-	if err == nil {
-		t.Fatal("expected error for absolute symlink target")
-	}
-	if !strings.Contains(err.Error(), "invalid symlink target") {
-		t.Errorf("expected 'invalid symlink target' error, got: %v", err)
-	}
-}
-
-func TestExtractTarGz_RejectsRelativeSymlinkEscape(t *testing.T) {
-	srcDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(srcDir, "safe.txt"), []byte("safe"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// ../../etc/passwd escapes the archive root
-	if err := os.Symlink("../../etc/passwd", filepath.Join(srcDir, "escape")); err != nil {
-		t.Fatal(err)
-	}
-
-	buf, err := createTarGzBuffer(srcDir)
-	if err != nil {
-		t.Fatalf("createTarGzBuffer() error = %v", err)
-	}
+	tw.WriteHeader(&tar.Header{Name: "safe.txt", Typeflag: tar.TypeReg, Size: 4, Mode: 0o644})
+	tw.Write([]byte("safe"))
+	tw.WriteHeader(&tar.Header{Name: "abs-link", Typeflag: tar.TypeSymlink, Linkname: "/etc/passwd"})
+	tw.WriteHeader(&tar.Header{Name: "rel-link", Typeflag: tar.TypeSymlink, Linkname: "../../etc/passwd"})
+	tw.Close()
+	gw.Close()
 
 	dstDir := t.TempDir()
-	err = extractTarGz(buf, dstDir)
-	if err == nil {
-		t.Fatal("expected error for relative symlink escaping destination")
+	if err := extractTarGz(&buf, dstDir); err != nil {
+		t.Fatalf("extractTarGz() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "invalid symlink target") {
-		t.Errorf("expected 'invalid symlink target' error, got: %v", err)
+
+	// Regular file should be extracted
+	if _, err := os.Stat(filepath.Join(dstDir, "safe.txt")); err != nil {
+		t.Errorf("safe.txt should exist: %v", err)
+	}
+	// Symlinks should be skipped, not created
+	if _, err := os.Lstat(filepath.Join(dstDir, "abs-link")); !os.IsNotExist(err) {
+		t.Error("abs-link symlink should not have been created")
+	}
+	if _, err := os.Lstat(filepath.Join(dstDir, "rel-link")); !os.IsNotExist(err) {
+		t.Error("rel-link symlink should not have been created")
 	}
 }
 
@@ -815,7 +791,7 @@ func TestVerifyDigest(t *testing.T) {
 	data := []byte("test data for digest verification")
 	h := sha256.New()
 	h.Write(data)
-	correctDigest := fmt.Sprintf("%x", h.Sum(nil))
+	correctDigest := hex.EncodeToString(h.Sum(nil))
 
 	tests := []struct {
 		name    string
@@ -836,9 +812,9 @@ func TestVerifyDigest(t *testing.T) {
 				t.Errorf("verifyDigest() error = %v, wantErr %v", err, tc.wantErr)
 			}
 			if tc.wantErr {
-				var mismatch *ErrDigestMismatch
+				var mismatch *DigestMismatchError
 				if !errors.As(err, &mismatch) {
-					t.Errorf("expected ErrDigestMismatch, got %T", err)
+					t.Errorf("expected DigestMismatchError, got %T", err)
 				}
 			}
 		})

@@ -32,9 +32,4 @@ const (
 	ScriptDir = "/tekton/scripts"
 
 	ArtifactsDir = "/tekton/artifacts"
-
-	// ArtifactsFetchedFile is the marker file written by the artifact-fetch
-	// init container after all content input artifacts have been downloaded.
-	// Steps check for this file to skip redundant downloads.
-	ArtifactsFetchedFile = ArtifactsDir + "/.fetched"
 )

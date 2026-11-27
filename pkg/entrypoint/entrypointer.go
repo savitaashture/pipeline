@@ -35,8 +35,7 @@ import (
 
 	"cel.dev/cel-go/cel"
 	"github.com/tektoncd/pipeline/internal/artifactref"
-	"github.com/tektoncd/pipeline/pkg/apis/config"
-	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1/types"
 	"github.com/tektoncd/pipeline/pkg/artifactstorage"
 	"github.com/tektoncd/pipeline/pkg/entrypoint/pipeline"
 	"github.com/tektoncd/pipeline/pkg/internal/resultref"
@@ -296,10 +295,10 @@ func (e Entrypointer) Go() error {
 
 		// Create output artifact directories so steps can write to them.
 		// For Content artifacts: Path is a directory and the step writes files into the directory.
-		// For Reference artifacts: Path is a .uri file and the the step writes a URI.
+		// For Reference artifacts: Path is a .uri file and the step writes a URI.
 		for _, ao := range e.ArtifactOutputs {
 			dir := ao.Path
-			if ao.Type == "reference" {
+			if ao.Type == v1.ArtifactTypeReference {
 				dir = filepath.Dir(ao.Path)
 			}
 			if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
@@ -312,7 +311,7 @@ func (e Entrypointer) Go() error {
 		// files are visible but should not be re-uploaded.
 		preStepFileCounts := make(map[string]int)
 		for _, ao := range e.ArtifactOutputs {
-			if ao.Type == "reference" {
+			if ao.Type == v1.ArtifactTypeReference {
 				continue
 			}
 			preStepFileCounts[ao.Name] = countFiles(ao.Path)
@@ -343,7 +342,7 @@ func (e Entrypointer) Go() error {
 				// Use a fresh context for uploads — the step context may be cancelled by the cancellation watcher
 				var budget *InlineBudgetTracker
 				if e.ArtifactInlineThreshold > 0 {
-					budget = NewInlineBudgetTracker(config.InlineBudgetFile, config.PodInlineBudget)
+					budget = NewInlineBudgetTracker(pipeline.InlineBudgetFile, pipeline.PodInlineBudget)
 				}
 				uploadCtx := context.Background()
 				meta := ArtifactMetadata{
@@ -352,7 +351,7 @@ func (e Entrypointer) Go() error {
 					Namespace:   e.ArtifactNamespace,
 				}
 				for _, ao := range e.ArtifactOutputs {
-					if ao.Type != "reference" {
+					if ao.Type != v1.ArtifactTypeReference {
 						if countFiles(ao.Path) <= preStepFileCounts[ao.Name] {
 							continue
 						}
@@ -364,9 +363,13 @@ func (e Entrypointer) Go() error {
 						output = append(output, e.outputRunResult(uploadErr.Error()))
 						break
 					}
-					avJSON, _ := json.Marshal(av)
+					avJSON, jsonErr := json.Marshal(av)
+					if jsonErr != nil {
+						err = fmt.Errorf("marshalling artifact value %s: %w", ao.Name, jsonErr)
+						break
+					}
 					output = append(output, result.RunResult{
-						Key:        fmt.Sprintf("artifact-%s", ao.Name),
+						Key:        "artifact-" + ao.Name,
 						Value:      string(avJSON),
 						ResultType: result.StepArtifactsResultType,
 					})

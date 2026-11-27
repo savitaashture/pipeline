@@ -156,8 +156,8 @@ func (ps *PipelineRunSpec) validatePipelineRunArtifacts(ctx context.Context) (er
 	}
 	names := sets.NewString()
 	for idx, in := range ps.Artifacts.Inputs {
-		if in.Name == "" {
-			errs = errs.Also(apis.ErrMissingField("name").ViaFieldIndex("inputs", idx).ViaField("artifacts"))
+		if err := validateArtifactName(in.Name, fmt.Sprintf("artifacts.inputs[%d].name", idx)); err != nil {
+			errs = errs.Also(err)
 		}
 		if names.Has(in.Name) {
 			errs = errs.Also(apis.ErrMultipleOneOf("name").ViaFieldIndex("inputs", idx).ViaField("artifacts"))

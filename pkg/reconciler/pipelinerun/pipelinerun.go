@@ -1516,7 +1516,10 @@ func (c *Reconciler) createTaskRun(ctx context.Context, taskRunName string, para
 		if resolveErr != nil {
 			logger.Warnf("Failed to resolve artifact inputs for task %s: %v", rpt.PipelineTask.Name, resolveErr)
 		} else if len(resolvedInputs) > 0 {
-			inputsJSON, _ := json.Marshal(resolvedInputs)
+			inputsJSON, err := json.Marshal(resolvedInputs)
+			if err != nil {
+				return nil, err
+			}
 			tr.Annotations[resources.ArtifactInputsAnnotation] = string(inputsJSON)
 		}
 	}

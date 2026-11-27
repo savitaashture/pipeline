@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strconv"
 
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline"
 	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -55,7 +56,10 @@ func artifactEntrypointArgs(taskSpec *v1.TaskSpec, backend string, ociRepository
 				Path: filepath.Join(pipeline.ArtifactsDir, "inputs", decl.Name),
 			})
 		}
-		data, _ := json.Marshal(inputs)
+		data, err := json.Marshal(inputs)
+		if err != nil {
+			return nil
+		}
 		args = append(args, "-artifact_inputs", string(data))
 	}
 
@@ -97,7 +101,10 @@ func artifactEntrypointArgs(taskSpec *v1.TaskSpec, backend string, ociRepository
 			}
 			outputs = append(outputs, out)
 		}
-		data, _ := json.Marshal(outputs)
+		data, err := json.Marshal(outputs)
+		if err != nil {
+			return nil
+		}
 		args = append(args, "-artifact_outputs", string(data))
 	}
 
@@ -110,7 +117,7 @@ func artifactEntrypointArgs(taskSpec *v1.TaskSpec, backend string, ociRepository
 	}
 
 	if inlineThreshold > 0 {
-		args = append(args, "-artifact_inline_threshold", fmt.Sprintf("%d", inlineThreshold))
+		args = append(args, "-artifact_inline_threshold", strconv.Itoa(inlineThreshold))
 	}
 
 	if provenance.TaskRun != "" {

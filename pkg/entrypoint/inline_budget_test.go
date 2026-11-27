@@ -171,8 +171,8 @@ func TestInlineBudgetTracker_Refund(t *testing.T) {
 	}
 }
 
-func TestErrInlineBudgetExceeded_Error(t *testing.T) {
-	err := &ErrInlineBudgetExceeded{
+func TestInlineBudgetExceededError_Error(t *testing.T) {
+	err := &InlineBudgetExceededError{
 		ArtifactName: "sbom",
 		ArtifactSize: 2048,
 		Remaining:    500,

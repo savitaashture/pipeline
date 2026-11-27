@@ -21,7 +21,7 @@ import (
 	"io"
 	"testing"
 
-	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1/types"
 )
 
 type fakeProvider struct {

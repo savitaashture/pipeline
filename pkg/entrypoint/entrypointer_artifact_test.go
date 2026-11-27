@@ -18,7 +18,6 @@ package entrypoint
 
 import (
 	"context"
-	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -67,7 +66,7 @@ func TestEntrypointer_ArtifactOutputUpload(t *testing.T) {
 			{
 				Name:       "sbom",
 				Path:       outputDir,
-				Repository: fmt.Sprintf("%s/artifacts/sbom", registryHost),
+				Repository: registryHost + "/artifacts/sbom",
 				MediaType:  "application/vnd.cyclonedx+json",
 			},
 		},

@@ -32,7 +32,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/tektoncd/pipeline/cmd/entrypoint/subcommands"
-	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1/types"
 	"github.com/tektoncd/pipeline/pkg/artifactstorage"
 	ocibackend "github.com/tektoncd/pipeline/pkg/artifactstorage/oci"
 	"github.com/tektoncd/pipeline/pkg/credentials/dockercreds"

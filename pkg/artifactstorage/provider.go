@@ -20,7 +20,7 @@ import (
 	"context"
 	"io"
 
-	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1/types"
 )
 
 // Provider is the contract that every artifact storage backend must implement.

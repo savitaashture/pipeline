@@ -43,7 +43,7 @@ func TestAttachReferrers(t *testing.T) {
 	registryHost := strings.TrimPrefix(srv.URL, "http://")
 
 	// Push a "build output" image (the subject)
-	subjectRef := fmt.Sprintf("%s/myapp:latest", registryHost)
+	subjectRef := registryHost + "/myapp:latest"
 	ref, err := name.ParseReference(subjectRef, name.Insecure)
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +79,7 @@ func TestAttachReferrers(t *testing.T) {
 			Artifact: v1.Artifact{
 				Name: "sbom",
 				Values: []v1.ArtifactValue{
-					{Uri: fmt.Sprintf("%s/artifacts/sbom@sha256:def456", registryHost), Digest: map[v1.Algorithm]string{"sha256": "def456"}},
+					{Uri: registryHost + "/artifacts/sbom@sha256:def456", Digest: map[v1.Algorithm]string{"sha256": "def456"}},
 				},
 			},
 			MediaType: "application/vnd.cyclonedx+json",
@@ -98,7 +98,7 @@ func TestAttachReferrers(t *testing.T) {
 	// The in-memory registry doesn't support the referrers API, so we
 	// verify the manifest exists by listing tags and checking for the
 	// referrer tag convention (sha256-<subject-digest>).
-	repo, err := name.NewRepository(fmt.Sprintf("%s/myapp", registryHost), name.Insecure)
+	repo, err := name.NewRepository(registryHost+"/myapp", name.Insecure)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestAttachReferrers_SubjectFieldInManifest(t *testing.T) {
 	registryHost := strings.TrimPrefix(srv.URL, "http://")
 
 	// Push a "build output" image (the subject)
-	subjectRef := fmt.Sprintf("%s/myapp:latest", registryHost)
+	subjectRef := registryHost + "/myapp:latest"
 	ref, err := name.ParseReference(subjectRef, name.Insecure)
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +153,7 @@ func TestAttachReferrers_SubjectFieldInManifest(t *testing.T) {
 		},
 		{
 			TaskName:  "scan",
-			Artifact:  v1.Artifact{Name: "sbom", Values: []v1.ArtifactValue{{Uri: fmt.Sprintf("%s/artifacts/sbom@sha256:abc123", registryHost)}}},
+			Artifact:  v1.Artifact{Name: "sbom", Values: []v1.ArtifactValue{{Uri: registryHost + "/artifacts/sbom@sha256:abc123"}}},
 			MediaType: "application/vnd.cyclonedx+json",
 		},
 	}

@@ -23,6 +23,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -30,10 +31,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
+	pipelinev1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1/types"
 	"github.com/tektoncd/pipeline/pkg/artifactstorage"
 	"github.com/tektoncd/pipeline/pkg/entrypoint/pipeline"
 )
+
+const algorithmSHA256 = "sha256"
 
 // ArtifactInput describes an artifact to download before step execution.
 type ArtifactInput struct {
@@ -97,14 +100,14 @@ func UploadArtifact(ctx context.Context, output ArtifactOutput, provider artifac
 
 	h := sha256.New()
 	h.Write(dataBytes)
-	digestHex := fmt.Sprintf("%x", h.Sum(nil))
+	digestHex := hex.EncodeToString(h.Sum(nil))
 
 	// Try to inline if the artifact fits the per-artifact threshold
 	if inlineThreshold > 0 && int(dataSize) <= inlineThreshold {
 		canInline := budget == nil || budget.TryConsume(int(dataSize))
 		if canInline {
 			return &pipelinev1.ArtifactValue{
-				Digest: map[pipelinev1.Algorithm]string{"sha256": digestHex},
+				Digest: map[pipelinev1.Algorithm]string{algorithmSHA256: digestHex},
 				Size:   dataSize,
 				Inline: base64.StdEncoding.EncodeToString(dataBytes),
 			}, nil
@@ -116,7 +119,7 @@ func UploadArtifact(ctx context.Context, output ArtifactOutput, provider artifac
 	if provider == nil {
 		if inlineThreshold > 0 {
 			if budget != nil && int(dataSize) <= inlineThreshold {
-				return nil, &ErrInlineBudgetExceeded{
+				return nil, &InlineBudgetExceededError{
 					ArtifactName: output.Name,
 					ArtifactSize: dataSize,
 					Remaining:    budget.Remaining(),
@@ -129,7 +132,7 @@ func UploadArtifact(ctx context.Context, output ArtifactOutput, provider artifac
 			"Set enabled: \"true\" in config-artifact-storage ConfigMap to enable uploads.",
 			slog.String("name", output.Name), slog.Int64("size", dataSize))
 		return &pipelinev1.ArtifactValue{
-			Digest: map[pipelinev1.Algorithm]string{"sha256": digestHex},
+			Digest: map[pipelinev1.Algorithm]string{algorithmSHA256: digestHex},
 			Size:   dataSize,
 		}, nil
 	}
@@ -149,7 +152,7 @@ func UploadArtifact(ctx context.Context, output ArtifactOutput, provider artifac
 
 	return &pipelinev1.ArtifactValue{
 		Uri:    ref.Location,
-		Digest: map[pipelinev1.Algorithm]string{"sha256": strings.TrimPrefix(ref.Digest, "sha256:")},
+		Digest: map[pipelinev1.Algorithm]string{algorithmSHA256: strings.TrimPrefix(ref.Digest, algorithmSHA256+":")},
 		Size:   dataSize,
 		Ref:    ref,
 	}, nil
@@ -180,7 +183,7 @@ func readReferenceArtifact(output ArtifactOutput) (*pipelinev1.ArtifactValue, er
 	return &pipelinev1.ArtifactValue{
 		Uri: uri,
 		Digest: map[pipelinev1.Algorithm]string{
-			"sha256": digest,
+			algorithmSHA256: digest,
 		},
 	}, nil
 }
@@ -209,8 +212,8 @@ func DownloadArtifact(ctx context.Context, input ArtifactInput, provider artifac
 	}
 
 	digestStr := ""
-	if d, ok := input.Digest["sha256"]; ok {
-		digestStr = "sha256:" + d
+	if d, ok := input.Digest[algorithmSHA256]; ok {
+		digestStr = algorithmSHA256 + ":" + d
 	}
 	storageRef := &pipelinev1.ArtifactStorageRef{
 		Location: input.URI,
@@ -239,14 +242,14 @@ func verifyAndExtractInlineArtifact(input ArtifactInput) error {
 	return extractTarGz(bytes.NewReader(data), input.Path)
 }
 
-// ErrDigestMismatch is returned when downloaded content does not match the expected digest.
-type ErrDigestMismatch struct {
+// DigestMismatchError is returned when downloaded content does not match the expected digest.
+type DigestMismatchError struct {
 	Algorithm string
 	Expected  string
 	Actual    string
 }
 
-func (e *ErrDigestMismatch) Error() string {
+func (e *DigestMismatchError) Error() string {
 	return fmt.Sprintf("digest verification failed: expected %s:%s, got %s:%s", e.Algorithm, e.Expected, e.Algorithm, e.Actual)
 }
 
@@ -257,15 +260,15 @@ func verifyDigest(data []byte, expectedDigest map[string]string) error {
 	if len(expectedDigest) == 0 {
 		return nil
 	}
-	expected, ok := expectedDigest["sha256"]
+	expected, ok := expectedDigest[algorithmSHA256]
 	if !ok {
 		return nil
 	}
 	h := sha256.New()
 	h.Write(data)
-	actual := fmt.Sprintf("%x", h.Sum(nil))
+	actual := hex.EncodeToString(h.Sum(nil))
 	if actual != expected {
-		return &ErrDigestMismatch{Algorithm: "sha256", Expected: expected, Actual: actual}
+		return &DigestMismatchError{Algorithm: algorithmSHA256, Expected: expected, Actual: actual}
 	}
 	return nil
 }
@@ -289,15 +292,21 @@ func createTarGzBuffer(path string) (*bytes.Buffer, error) {
 			return nil
 		}
 
-		var link string
 		if fi.Mode()&os.ModeSymlink != 0 {
-			link, err = os.Readlink(file)
+			resolved, err := filepath.EvalSymlinks(file)
 			if err != nil {
 				return err
 			}
+			fi, err = os.Stat(resolved)
+			if err != nil {
+				return err
+			}
+			if fi.IsDir() {
+				return nil
+			}
 		}
 
-		header, err := tar.FileInfoHeader(fi, link)
+		header, err := tar.FileInfoHeader(fi, "")
 		if err != nil {
 			return err
 		}
@@ -307,11 +316,11 @@ func createTarGzBuffer(path string) (*bytes.Buffer, error) {
 			return err
 		}
 
-		if fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
+		if fi.IsDir() {
 			return nil
 		}
 
-		f, err := os.Open(file)
+		f, err := os.Open(file) //nolint:gosec // path is within the artifact output dir owned by this pod, not user-controlled input
 		if err != nil {
 			return err
 		}
@@ -352,7 +361,7 @@ func extractTarGz(r io.Reader, dst string) error {
 			return err
 		}
 
-		target := filepath.Join(dst, header.Name)
+		target := filepath.Join(dst, header.Name) //nolint:gosec // traversal is checked on the next line
 		if !strings.HasPrefix(target, filepath.Clean(dst)+string(os.PathSeparator)) {
 			return fmt.Errorf("invalid tar entry: %s", header.Name)
 		}
@@ -363,27 +372,12 @@ func extractTarGz(r io.Reader, dst string) error {
 				return err
 			}
 		case tar.TypeSymlink:
-			linkTarget := header.Linkname
-			if filepath.IsAbs(linkTarget) {
-				return fmt.Errorf("invalid symlink target: %s -> %s (absolute path)", header.Name, linkTarget)
-			}
-			resolved := filepath.Join(filepath.Dir(target), linkTarget)
-			if !strings.HasPrefix(filepath.Clean(resolved), filepath.Clean(dst)+string(os.PathSeparator)) &&
-				filepath.Clean(resolved) != filepath.Clean(dst) {
-				return fmt.Errorf("invalid symlink target: %s -> %s", header.Name, linkTarget)
-			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			os.Remove(target)
-			if err := os.Symlink(linkTarget, target); err != nil {
-				return err
-			}
+			continue
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode&0o777))
 			if err != nil {
 				return err
 			}

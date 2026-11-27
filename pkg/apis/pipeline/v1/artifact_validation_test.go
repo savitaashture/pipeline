@@ -136,6 +136,44 @@ func TestValidateArtifactDeclarations_EmptyName(t *testing.T) {
 	}
 }
 
+func TestValidateArtifactDeclarations_PathTraversalNames(t *testing.T) {
+	ctx := artifactsEnabledCtx()
+	tests := []struct {
+		name         string
+		artifactName string
+		wantErr      bool
+	}{
+		{"path traversal with parent dir", "../../etc/shadow", true},
+		{"dotdot only", "..", true},
+		{"single dot", ".", true},
+		{"slash in name", "foo/bar", true},
+		{"backslash in name", "foo\\bar", true},
+		{"dotdot prefix", "..foo", true},
+		{"ssh key path", "../.ssh/id_rsa", true},
+		{"starts with hyphen", "-image", true},
+		{"starts with dot", ".hidden", true},
+		{"valid simple name", "image", false},
+		{"valid with hyphen", "my-image", false},
+		{"valid with underscore", "my_image", false},
+		{"valid with dot", "image.tar", false},
+		{"valid alphanumeric", "sbom2", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decls := &ArtifactDeclarations{
+				Inputs: []ArtifactDeclaration{
+					{Name: tt.artifactName},
+				},
+			}
+			errs := ValidateArtifactDeclarations(ctx, decls)
+			if (errs != nil) != tt.wantErr {
+				t.Errorf("ValidateArtifactDeclarations() with name %q: errors = %v, wantErr %v", tt.artifactName, errs, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateArtifactDeclarations_MultipleSubjectsAllowed(t *testing.T) {
 	ctx := artifactsEnabledCtx()
 	decls := &ArtifactDeclarations{

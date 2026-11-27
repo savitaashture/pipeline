@@ -77,7 +77,7 @@ func (t *InlineBudgetTracker) Refund(size int) {
 }
 
 func (t *InlineBudgetTracker) persist() {
-	os.WriteFile(t.budgetFile, []byte(strconv.Itoa(t.consumed)), 0o644) //nolint:errcheck
+	os.WriteFile(t.budgetFile, []byte(strconv.Itoa(t.consumed)), 0o600) //nolint:errcheck
 }
 
 // Remaining returns the number of raw bytes still available for inlining.
@@ -94,15 +94,15 @@ func (t *InlineBudgetTracker) Consumed() int {
 	return t.consumed
 }
 
-// ErrInlineBudgetExceeded is returned when an artifact exceeds both the
+// InlineBudgetExceededError is returned when an artifact exceeds both the
 // inline budget and has no backend to fall back to.
-type ErrInlineBudgetExceeded struct {
+type InlineBudgetExceededError struct {
 	ArtifactName string
 	ArtifactSize int64
 	Remaining    int
 }
 
-func (e *ErrInlineBudgetExceeded) Error() string {
+func (e *InlineBudgetExceededError) Error() string {
 	return fmt.Sprintf("artifact %q (%d bytes) exceeds remaining pod inline budget (%d bytes) and no storage backend is configured",
 		e.ArtifactName, e.ArtifactSize, e.Remaining)
 }
